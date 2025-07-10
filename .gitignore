@@ -1,0 +1,13 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# SQLite DB
+app.db
+
+# 환경 변수
+.env
+
+# macOS
+.DS_Store 
