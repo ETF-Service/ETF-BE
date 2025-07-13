@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import relationship
 from database import Base
 
 class User(Base):
@@ -7,3 +8,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     password = Column(String)
     name = Column(String)
+    
+    # 관계 설정
+    portfolios = relationship("UserPortfolio", back_populates="user")
+    settings = relationship("InvestmentSettings", back_populates="user", uselist=False)
