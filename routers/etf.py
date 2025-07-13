@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from database import SessionLocal
@@ -39,7 +39,7 @@ def get_portfolio(current_user: str = Depends(get_current_user), db: Session = D
     """사용자의 포트폴리오 및 설정 조회"""
     user = get_user_by_username(db, current_user)
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     
     user_id = getattr(user, 'id')
     portfolios = get_user_portfolios(db, user_id)
@@ -56,7 +56,7 @@ def add_portfolio(
     """포트폴리오에 ETF 추가"""
     user = get_user_by_username(db, current_user)
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     
     user_id = getattr(user, 'id')
     return create_user_portfolio(db, user_id, portfolio)
@@ -71,11 +71,11 @@ def update_portfolio(
     """포트폴리오 투자 금액 수정"""
     user = get_user_by_username(db, current_user)
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     
     portfolio = update_user_portfolio(db, portfolio_id, monthly_investment)
     if not portfolio:
-        raise HTTPException(status_code=404, detail="포트폴리오를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="포트폴리오를 찾을 수 없습니다.")
     
     return {"message": "포트폴리오가 업데이트되었습니다."}
 
@@ -88,12 +88,12 @@ def delete_portfolio(
     """포트폴리오에서 ETF 제거"""
     user = get_user_by_username(db, current_user)
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     
     user_id = getattr(user, 'id')
     portfolio = delete_user_portfolio(db, portfolio_id, user_id)
     if not portfolio:
-        raise HTTPException(status_code=404, detail="포트폴리오를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="포트폴리오를 찾을 수 없습니다.")
     
     return {"message": "포트폴리오가 삭제되었습니다."}
 
@@ -105,7 +105,7 @@ def delete_all_portfolios(
     """사용자의 모든 포트폴리오 삭제"""
     user = get_user_by_username(db, current_user)
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     
     user_id = getattr(user, 'id')
     delete_all_user_portfolios(db, user_id)
@@ -121,12 +121,12 @@ def create_settings(
     """투자 설정 생성"""
     user = get_user_by_username(db, current_user)
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     
     user_id = getattr(user, 'id')
     existing_settings = get_user_settings(db, user_id)
     if existing_settings:
-        raise HTTPException(status_code=400, detail="이미 설정이 존재합니다.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이미 설정이 존재합니다.")
     
     return create_user_settings(db, user_id, settings)
 
@@ -139,12 +139,12 @@ def update_settings(
     """투자 설정 수정"""
     user = get_user_by_username(db, current_user)
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     
     user_id = getattr(user, 'id')
     updated_settings = update_user_settings(db, user_id, settings)
     if not updated_settings:
-        raise HTTPException(status_code=404, detail="설정을 찾을 수 없습니다.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="설정을 찾을 수 없습니다.")
     
     return updated_settings
 

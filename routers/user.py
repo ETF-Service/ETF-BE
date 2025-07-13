@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import SessionLocal, Base, engine
 from schemas.user import UserCreate, UserLogin
@@ -18,18 +18,26 @@ def get_db():
     finally:
         db.close()
 
-@router.post("/signup")
+@router.post("/signup", status_code=status.HTTP_201_CREATED)
 def signup(user: UserCreate, db: Session = Depends(get_db)):
+    """회원가입 - 스키마 검증 실패 시 자동으로 422 반환"""
     if get_user_by_username(db, user.username):
-        raise HTTPException(status_code=400, detail="이미 존재하는 아이디입니다.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="이미 존재하는 아이디입니다."
+        )
     create_user(db, user)
     return {"message": "회원가입 성공"}
 
 @router.post("/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
+    """로그인 - 스키마 검증 실패 시 자동으로 422 반환"""
     db_user = get_user_by_username(db, user.username)
     if not db_user or not verify_password(user.password, str(db_user.password)):
-        raise HTTPException(status_code=400, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="아이디 또는 비밀번호가 올바르지 않습니다."
+        )
     
     # JWT 토큰 생성
     access_token = create_access_token(data={"sub": db_user.username})
@@ -43,9 +51,13 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def get_current_user_info(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    """현재 사용자 정보 조회"""
     db_user = get_user_by_username(db, current_user)
     if not db_user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="사용자를 찾을 수 없습니다."
+        )
     return {
         "username": db_user.username,
         "name": db_user.name
