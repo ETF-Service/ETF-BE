@@ -11,3 +11,15 @@ app.db
 
 # macOS
 .DS_Store 
+
+# 테스트/커버리지
+.coverage
+htmlcov/
+.pytest_cache/
+
+# IDE/에디터
+.vscode/
+.idea/
+
+# 로그
+*.log 
