@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import SessionLocal, Base, engine
 from schemas.user import UserCreate, UserLogin
-from crud.user import get_user_by_username, create_user
+from crud.user import get_user_by_userId, create_user
 from utils.security import verify_password
 from utils.auth import create_access_token, get_current_user
 from models import user as user_model
@@ -18,47 +18,38 @@ def get_db():
     finally:
         db.close()
 
-@router.post("/signup", status_code=status.HTTP_201_CREATED)
-def signup(user: UserCreate, db: Session = Depends(get_db)):
-    """회원가입 - 스키마 검증 실패 시 자동으로 422 반환"""
-    if get_user_by_username(db, user.username):
+@router.post("/users", status_code=status.HTTP_201_CREATED)
+def create_user_endpoint(user: UserCreate, db: Session = Depends(get_db)):
+    if get_user_by_userId(db, user.user_id):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="이미 존재하는 아이디입니다."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 존재하는 사용자입니다."
         )
-    create_user(db, user)
-    return {"message": "회원가입 성공"}
+    db_user = create_user(db, user)
+    return {"message": "회원가입 성공", "user_id": db_user.id}
 
-@router.post("/login")
-def login(user: UserLogin, db: Session = Depends(get_db)):
-    """로그인 - 스키마 검증 실패 시 자동으로 422 반환"""
-    db_user = get_user_by_username(db, user.username)
-    if not db_user or not verify_password(user.password, str(db_user.password)):
+@router.post("/auth/login")
+def login_endpoint(user: UserLogin, db: Session = Depends(get_db)):
+    db_user = get_user_by_userId(db, user.user_id)
+    if not db_user or not verify_password(user.password, str(db_user.hashed_password)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="아이디 또는 비밀번호가 올바르지 않습니다."
         )
-    
-    # JWT 토큰 생성
-    access_token = create_access_token(data={"sub": db_user.username})
-    
+    access_token = create_access_token(data={"sub": db_user.user_id})
     return {
         "message": "로그인 성공", 
+        "user_id": db_user.user_id,
         "name": db_user.name,
         "access_token": access_token,
         "token_type": "bearer"
     }
 
-@router.get("/me")
-def get_current_user_info(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
-    """현재 사용자 정보 조회"""
-    db_user = get_user_by_username(db, current_user)
-    if not db_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="사용자를 찾을 수 없습니다."
-        )
+@router.get("/users/me")
+def get_me(current_user=Depends(get_current_user)):
     return {
-        "username": db_user.username,
-        "name": db_user.name
+        "user_id": current_user.user_id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "created_at": current_user.created_at
     }

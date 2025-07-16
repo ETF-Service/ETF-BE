@@ -6,7 +6,7 @@ import json
 import asyncio
 from database import SessionLocal
 from schemas.chat import ChatMessage, ChatResponse
-from crud.user import get_user_by_username
+from crud.user import get_user_by_userId
 from crud.etf import get_user_portfolios, get_user_settings
 from utils.auth import get_current_user
 from services.ai_service import AIService
@@ -20,14 +20,14 @@ def get_db():
     finally:
         db.close()
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chats")
 async def send_message(
     message: ChatMessage,
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """챗봇에 메시지 전송 (일반 응답)"""
-    user = get_user_by_username(db, current_user)
+    user = get_user_by_userId(db, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     
@@ -48,14 +48,14 @@ async def send_message(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 서비스 오류: {str(e)}")
 
-@router.post("/chat/stream")
+@router.post("/chats/stream")
 async def send_message_stream(
     message: ChatMessage,
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """챗봇에 메시지 전송 (스트리밍 응답)"""
-    user = get_user_by_username(db, current_user)
+    user = get_user_by_userId(db, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     
