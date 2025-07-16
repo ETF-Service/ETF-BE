@@ -25,18 +25,4 @@ class UserPortfolio(Base):
     
     # 관계 설정
     user = relationship("User", back_populates="portfolios")
-    etf = relationship("ETF")
-
-class InvestmentSettings(Base):
-    __tablename__ = "investment_settings"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
-    risk_level = Column(Integer, default=5)  # 0-10 투자 성향
-    api_key = Column(String, nullable=True)  # AI 서비스 API 키
-    model_type = Column(String, default="gpt-4o")  # 사용할 AI 모델
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
-    # 관계 설정
-    user = relationship("User", back_populates="settings") 
+    etf = relationship("ETF") 
