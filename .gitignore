@@ -23,3 +23,6 @@ htmlcov/
 
 # 로그
 *.log 
+
+# Cursor
+.cursor/
