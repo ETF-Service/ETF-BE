@@ -3,13 +3,13 @@ from models.user import User
 from utils.security import hash_password, verify_password
 from schemas.user import UserCreate
 
-def get_user_by_userId(db: Session, userId: str):
-    return db.query(User).filter(User.userId == userId).first()
+def get_user_by_userId(db: Session, user_id: str):
+    return db.query(User).filter(User.user_id == user_id).first()
 
 def create_user(db: Session, user: UserCreate):
     hashed_pw = hash_password(user.password)
     db_user = User(
-        userId=user.userId,
+        user_id=user.user_id,
         hashed_password=hashed_pw,
         name=user.name,
         email=user.email

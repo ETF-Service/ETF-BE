@@ -25,14 +25,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: Optional[str] = payload.get("sub")
-        if username is None:
+        user_id: Optional[str] = payload.get("sub")  # "sub"는 user_id를 의미
+        if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return username
+        return user_id
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -49,5 +49,5 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
         )
     
     token = credentials.credentials
-    username = verify_token(token)
-    return username 
+    user_id = verify_token(token)  # user_id 반환 (예: "user123")
+    return user_id 

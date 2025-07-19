@@ -2,12 +2,14 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
+from pydantic import ConfigDict
+from pydantic.alias_generators import to_camel
 
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    userId = Column(String, unique=True, index=True, nullable=False)  # 로그인용 고유 아이디
+    user_id = Column(String, unique=True, index=True, nullable=False)  # 로그인용 고유 아이디
     hashed_password = Column(String, nullable=False)
     name = Column(String, nullable=True)  # 실명/닉네임
     email = Column(String, unique=True, index=True, nullable=True)
@@ -16,6 +18,11 @@ class User(Base):
 
     portfolios = relationship("UserPortfolio", back_populates="user")
     settings = relationship("InvestmentSettings", back_populates="user", uselist=False)
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
 class InvestmentSettings(Base):
     __tablename__ = "investment_settings"

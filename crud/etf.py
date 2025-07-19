@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from typing import cast
-from models.etf import ETF, UserPortfolio, InvestmentSettings
+from models.etf import ETF, UserPortfolio
+from models.user import InvestmentSettings
 from schemas.etf import UserPortfolioCreate, InvestmentSettingsCreate, InvestmentSettingsUpdate
 
 # ETF 관련 CRUD
