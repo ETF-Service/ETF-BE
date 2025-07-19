@@ -4,13 +4,13 @@ from sqlalchemy.orm import Session
 from typing import List
 import json
 import asyncio
-import requests
+import httpx
 from database import SessionLocal
-from schemas.chat import ChatMessage, ChatResponse
+from schemas.chat import ChatMessage, ChatHistory, ChatResponse
 from crud.user import get_user_by_userId
-from crud.etf import get_user_portfolios, get_user_settings
+from crud.etf import get_user_settings
+from crud.chat import save_message, get_chat_history_asc, get_message_count
 from utils.auth import get_current_user
-from models import chat as chat_model
 
 router = APIRouter()
 
@@ -21,76 +21,25 @@ def get_db():
     finally:
         db.close()
 
-@router.post("/chats", response_model=ChatResponse)
-def chat_with_ai(
-    message: ChatMessage,
+@router.get("/chat/history", response_model=ChatHistory)
+def get_user_chat_history(
+    limit: int = 50,
     db: Session = Depends(get_db),
     current_user: str = Depends(get_current_user)
 ):
-    """
-    사용자의 질문을 받아 AI 서버에 전달하고, 답변을 받아 DB에 저장 후 반환
-    """
-    # 1. 사용자 정보 및 설정 가져오기
+    """사용자의 대화 히스토리 조회"""
     user = get_user_by_userId(db, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     
-    settings = get_user_settings(db, user_id=user.id)
-    api_key = settings.api_key if settings else "default-api-key"
-    model_type = settings.model_type if settings else "gpt-3.5-turbo"
+    messages = get_chat_history_asc(db, int(user.id), limit)
+    total_count = get_message_count(db, int(user.id))
     
-    # 2. AI 서버에 직접 요청 (스트리밍으로 받아서 전체 답변 수집)
-    
-    payload = {
-        "question": message.content,
-        "api_key": api_key,
-        "model_type": model_type
-    }
-    
-    try:
-        response = requests.post(
-            "http://localhost:8001/chat/stream",
-            json=payload,
-            stream=True,
-            timeout=60
-        )
-        response.raise_for_status()
-        
-        ai_answer = ""
-        for line in response.iter_lines():
-            if line:
-                line_str = line.decode('utf-8')
-                if line_str.startswith('data: '):
-                    data = line_str[6:]  # 'data: ' 제거
-                    if data == '[DONE]':
-                        break
-                    try:
-                        parsed = json.loads(data)
-                        if 'content' in parsed:
-                            ai_answer += parsed['content']
-                    except json.JSONDecodeError:
-                        # JSON이 아닌 경우 그대로 추가
-                        ai_answer += data
-                        
-    except Exception as e:
-        ai_answer = f"AI 서비스 오류: {str(e)}"
+    return ChatHistory(messages=messages, total_count=total_count)
 
-    # 3. DB에 질문/답변 저장
-    chat_history = chat_model.ChatHistory(
-        user_id=user.id,  # 실제 데이터베이스 ID (정수)
-        question=message.content,
-        answer=ai_answer
-    )
-    db.add(chat_history)
-    db.commit()
-    db.refresh(chat_history)
-
-    # 4. 답변 반환
-    return ChatResponse(answer=ai_answer)
-
-@router.post("/chats/stream")
+@router.post("/chat/stream")
 async def send_message_stream(
-    message: ChatMessage,
+    message: ChatResponse,
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -99,8 +48,20 @@ async def send_message_stream(
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     
-    # 사용자 설정 가져오기
-    settings = get_user_settings(db, user.id)
+    # 1. 사용자 메시지를 DB에 저장
+    save_message(db, int(user.id), "user", message.content)
+    
+    # 2. 사용자의 전체 대화 히스토리 조회 (시간순)
+    chat_history = get_chat_history_asc(db, int(user.id))
+    
+    # 3. AI 서버용 메시지 형식으로 변환
+    messages = [
+        {"role": msg.role, "content": msg.content} 
+        for msg in chat_history
+    ]
+    
+    # 4. 사용자 설정 가져오기
+    settings = get_user_settings(db, int(user.id))
     if not settings:
         raise HTTPException(status_code=404, detail="설정을 찾을 수 없습니다.")
     api_key = settings.api_key
@@ -108,38 +69,37 @@ async def send_message_stream(
     
     async def generate_stream():
         try:
-            # AI 서버의 스트리밍 엔드포인트에 직접 요청
-            import requests
-            
-            payload = {
-                "question": message.content,
-                "api_key": api_key,
-                "model_type": model_type
-            }
-            
-            response = requests.post(
-                "http://localhost:8001/chat/stream",
-                json=payload,
-                stream=True,
-                timeout=60
-            )
-            response.raise_for_status()
-            
-            # AI 서버에서 오는 스트리밍 데이터를 그대로 전달
-            for line in response.iter_lines():
-                if line:
-                    line_str = line.decode('utf-8')
-                    if line_str.startswith('data: '):
-                        data = line_str[6:]  # 'data: ' 제거
+            # 5. AI 서버에 전체 대화 히스토리 전송
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "http://localhost:8001/chat/stream",
+                    json={
+                        "messages": messages,  # 전체 대화 히스토리
+                        "api_key": api_key,
+                        "model_type": model_type
+                    },
+                    timeout=60.0
+                )
+                response.raise_for_status()
+                
+                full_response = ""
+                async for line in response.aiter_lines():
+                    if line.startswith('data: '):
+                        data = line[6:]  # 'data: ' 제거
                         if data == '[DONE]':
                             break
                         try:
                             parsed = json.loads(data)
                             if 'content' in parsed:
+                                full_response += parsed['content']
                                 yield f"data: {json.dumps({'content': parsed['content']})}\n\n"
                         except json.JSONDecodeError:
-                            # JSON이 아닌 경우 그대로 yield
                             yield f"data: {json.dumps({'content': data})}\n\n"
+                
+                # 6. AI 응답을 DB에 저장
+                save_message(db, int(user.id), "assistant", full_response)
+                
+                yield "data: [DONE]\n\n"
                             
         except Exception as e:
             error_message = f"AI 서비스 오류: {str(e)}"

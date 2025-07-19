@@ -18,6 +18,7 @@ class User(Base):
 
     portfolios = relationship("UserPortfolio", back_populates="user")
     settings = relationship("InvestmentSettings", back_populates="user", uselist=False)
+    chat_messages = relationship("ChatMessage", back_populates="user")
 
     model_config = ConfigDict(
         alias_generator=to_camel,
