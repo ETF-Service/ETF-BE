@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import SessionLocal, Base, engine
 from schemas.user import UserCreate, UserLogin
-from crud.user import get_user_by_userId, create_user
+from crud.user import get_user_by_userId, create_user, get_user_by_email
 from utils.security import verify_password
 from utils.auth import create_access_token, get_current_user
 from models import user as user_model
@@ -24,6 +24,11 @@ def create_user_endpoint(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="이미 존재하는 사용자입니다."
+        )
+    if (get_user_by_email(db, user.email)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 존재하는 이메일입니다."
         )
     db_user = create_user(db, user)
     return {"message": "회원가입 성공", "user_id": db_user.id}

@@ -18,15 +18,15 @@ class ETF(ETFBase):
     class Config:
         from_attributes = True
 
-class UserPortfolioBase(BaseModel):
+class UserETFBase(BaseModel):
+    setting_id: int
     etf_id: int
 
-class UserPortfolioCreate(UserPortfolioBase):
+class UserETFUpdate(UserETFBase):
     pass
 
-class UserPortfolio(UserPortfolioBase):
+class UserETF(UserETFBase):
     id: int
-    user_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
     etf: ETF
@@ -37,9 +37,9 @@ class UserPortfolio(UserPortfolioBase):
 class InvestmentSettingsBase(BaseModel):
     risk_level: int = 5
     api_key: Optional[str] = None
-    model_type: str = "gpt-4o"
-    monthly_investment: float
-    persona: int
+    model_type: str = "clova-x"
+    monthly_investment: float = 10.0
+    persona: Optional[str] = None
 
 class InvestmentSettingsCreate(InvestmentSettingsBase):
     pass
@@ -59,5 +59,5 @@ class InvestmentSettings(InvestmentSettingsBase):
         from_attributes = True
 
 class UserPortfolioResponse(BaseModel):
-    portfolios: Sequence[UserPortfolio]
     settings: Optional[InvestmentSettings] = None 
+    etfs: Sequence[UserETFBase] = []

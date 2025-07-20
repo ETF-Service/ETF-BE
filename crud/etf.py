@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session, joinedload
 from typing import cast
-from models.etf import ETF, UserPortfolio
+from models.etf import ETF, InvestmentEtf
 from models.user import InvestmentSettings
-from schemas.etf import UserPortfolioCreate, InvestmentSettingsCreate, InvestmentSettingsUpdate
+from schemas.etf import UserETFUpdate, InvestmentSettingsCreate, InvestmentSettingsUpdate
 
 # ETF 관련 CRUD
 def get_all_etfs(db: Session):
@@ -12,53 +12,34 @@ def get_etf_by_symbol(db: Session, symbol: str):
     return db.query(ETF).filter(ETF.symbol == symbol).first()
 
 # 사용자 포트폴리오 관련 CRUD
-def get_user_portfolios(db: Session, user_id: int):
-    return db.query(UserPortfolio).options(
-        joinedload(UserPortfolio.etf)
-    ).filter(UserPortfolio.user_id == user_id).all()
+def get_user_etfs(db: Session, setting_id: int):
+    return db.query(InvestmentEtf).options(
+        joinedload(InvestmentEtf.etf)
+    ).filter(InvestmentEtf.setting_id == setting_id).all()
 
-def create_user_portfolio(db: Session, user_id: int, portfolio: UserPortfolioCreate):
-    db_portfolio = UserPortfolio(
-        user_id=user_id,
-        etf_id=portfolio.etf_id,
-    )
-    db.add(db_portfolio)
-    db.commit()
-    db.refresh(db_portfolio)
+def get_user_etf_by_setting_id(db: Session, setting_id: int):
+    return db.query(InvestmentEtf).filter(InvestmentEtf.setting_id == setting_id).first()
+
+def update_user_etf(db: Session, setting_id: int, etf: UserETFUpdate):
+    db_etf = get_user_etf_by_setting_id(db, setting_id)
+    if db_etf:
+        return None
     
-    # etf 관계를 로드하여 반환
-    return db.query(UserPortfolio).options(
-        joinedload(UserPortfolio.etf)
-    ).filter(UserPortfolio.id == db_portfolio.id).first()
+    create_user_etf(db, setting_id, etf)
 
-def update_user_portfolio(db: Session, portfolio_id: int, monthly_investment: float):
-    db_portfolio = db.query(UserPortfolio).filter(UserPortfolio.id == portfolio_id).first()
-    if db_portfolio:
-        setattr(db_portfolio, 'monthly_investment', monthly_investment)
-        db.commit()
-        db.refresh(db_portfolio)
-        
-        # etf 관계를 로드하여 반환
-        return db.query(UserPortfolio).options(
-            joinedload(UserPortfolio.etf)
-        ).filter(UserPortfolio.id == portfolio_id).first()
-    return db_portfolio
-
-def delete_user_portfolio(db: Session, portfolio_id: int, user_id: int):
-    db_portfolio = db.query(UserPortfolio).filter(
-        UserPortfolio.id == portfolio_id,
-        UserPortfolio.user_id == user_id
-    ).first()
-    if db_portfolio:
-        db.delete(db_portfolio)
-        db.commit()
-    return db_portfolio
-
-def delete_all_user_portfolios(db: Session, user_id: int):
-    """사용자의 모든 포트폴리오 삭제"""
-    db.query(UserPortfolio).filter(UserPortfolio.user_id == user_id).delete()
+def create_user_etf(db: Session, setting_id: int, etf: UserETFUpdate):
+    db_etf = InvestmentEtf(
+        setting_id=setting_id,
+        etf_id=etf.etf_id,
+    )
+    db.add(db_etf)
     db.commit()
+    db.refresh(db_etf)
 
+    return db.query(InvestmentEtf).options(
+        joinedload(InvestmentEtf.etf)
+    ).filter(InvestmentEtf.id == db_etf.id).first()
+    
 # 투자 설정 관련 CRUD
 def get_user_settings(db: Session, user_id: int):
     return db.query(InvestmentSettings).filter(InvestmentSettings.user_id == user_id).first()

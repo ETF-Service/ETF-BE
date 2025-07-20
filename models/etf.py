@@ -10,17 +10,17 @@ class ETF(Base):
     symbol = Column(String, unique=True, index=True)  # SPY, QQQ 등
     name = Column(String)  # 미국 S&P500, 미국 나스닥 등
     description = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    investment_etfs = relationship("InvestmentEtf", back_populates="etf")
+    settings = relationship("InvestmentEtf", back_populates="etf")
 
 class InvestmentEtf(Base):
     __tablename__ = "investment_etfs"
     
     id = Column(Integer, primary_key=True, index=True)
-    investment_setting_id = Column(Integer, ForeignKey("investment_settings.id"))
+    setting_id = Column(Integer, ForeignKey("investment_settings.id"))
     etf_id = Column(Integer, ForeignKey("etfs.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    settings = relationship("InvestmentSettings", back_populates="etfs")
-    etf = relationship("ETF", back_populates="investment_etfs")
+    setting = relationship("InvestmentSettings", back_populates="etfs")
+    etf = relationship("ETF", back_populates="settings")
