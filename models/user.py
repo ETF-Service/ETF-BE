@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -16,7 +16,6 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    portfolios = relationship("UserPortfolio", back_populates="user")
     settings = relationship("InvestmentSettings", back_populates="user", uselist=False)
     chat_messages = relationship("ChatMessage", back_populates="user")
 
@@ -32,9 +31,11 @@ class InvestmentSettings(Base):
     risk_level = Column(Integer, default=5)
     api_key = Column(String, nullable=False)
     model_type = Column(String, nullable=False)
-    monthly_investment = Column(Integer)
-    persona = Column(Integer, ForeignKey("chat_messages.id"))
+    monthly_investment = Column(Float, default=10.0) # 만원 단위
+    persona = Column(Integer, ForeignKey("chat_messages.id"), nullable=True)  # 특정 채팅 메시지 참조
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    user = relationship("User", back_populates="settings")
+    etfs = relationship("InvestmentEtf", back_populates="settings")
+    user = relationship("User", back_populates="settings", uselist=False)
+    persona_message = relationship("ChatMessage", back_populates="persona_settings", uselist=False)

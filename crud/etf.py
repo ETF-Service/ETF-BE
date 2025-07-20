@@ -21,7 +21,6 @@ def create_user_portfolio(db: Session, user_id: int, portfolio: UserPortfolioCre
     db_portfolio = UserPortfolio(
         user_id=user_id,
         etf_id=portfolio.etf_id,
-        monthly_investment=portfolio.monthly_investment
     )
     db.add(db_portfolio)
     db.commit()

@@ -20,7 +20,6 @@ class ETF(ETFBase):
 
 class UserPortfolioBase(BaseModel):
     etf_id: int
-    monthly_investment: float
 
 class UserPortfolioCreate(UserPortfolioBase):
     pass
@@ -39,6 +38,8 @@ class InvestmentSettingsBase(BaseModel):
     risk_level: int = 5
     api_key: Optional[str] = None
     model_type: str = "gpt-4o"
+    monthly_investment: float
+    persona: int
 
 class InvestmentSettingsCreate(InvestmentSettingsBase):
     pass

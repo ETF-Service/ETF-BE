@@ -13,15 +13,14 @@ class ETF(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-class UserPortfolio(Base):
-    __tablename__ = "user_portfolios"
+    investment_etfs = relationship("InvestmentEtf", back_populates="etf")
+
+class InvestmentEtf(Base):
+    __tablename__ = "investment_etfs"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    investment_setting_id = Column(Integer, ForeignKey("investment_settings.id"))
     etf_id = Column(Integer, ForeignKey("etfs.id"))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
-    # 관계 설정
-    user = relationship("User", back_populates="portfolios")
-    etf = relationship("ETF") 
+
+    settings = relationship("InvestmentSettings", back_populates="etfs")
+    etf = relationship("ETF", back_populates="investment_etfs")
