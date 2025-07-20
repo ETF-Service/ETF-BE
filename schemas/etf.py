@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import List, Optional, Sequence
 from datetime import datetime
+from pydantic import ConfigDict
+from pydantic.alias_generators import to_camel
 
 class ETFBase(BaseModel):
     symbol: str
@@ -12,23 +14,27 @@ class ETFCreate(ETFBase):
 
 class ETF(ETFBase):
     id: int
-    created_at: datetime
-    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
 
+class UserETFResponse(BaseModel):
+	etfs: Sequence[ETF]
+
 class UserETFBase(BaseModel):
+    etf_id: int
     setting_id: int
+
+class UserETFUpdate(BaseModel):
     etf_id: int
 
-class UserETFUpdate(UserETFBase):
-    pass
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
 class UserETF(UserETFBase):
     id: int
-    created_at: datetime
-    updated_at: Optional[datetime] = None
     etf: ETF
     
     class Config:
@@ -48,6 +54,7 @@ class InvestmentSettingsUpdate(BaseModel):
     risk_level: Optional[int] = None
     api_key: Optional[str] = None
     model_type: Optional[str] = None
+    monthly_investment: Optional[float] = None
 
 class InvestmentSettings(InvestmentSettingsBase):
     id: int
@@ -58,6 +65,5 @@ class InvestmentSettings(InvestmentSettingsBase):
     class Config:
         from_attributes = True
 
-class UserPortfolioResponse(BaseModel):
+class InvestmentSettingsResponse(BaseModel):
     settings: Optional[InvestmentSettings] = None 
-    etfs: Sequence[UserETFBase] = []

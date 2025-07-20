@@ -14,4 +14,4 @@ class ChatMessage(Base):
     
     # 관계 설정
     user = relationship("User", back_populates="chat_messages") 
-    persona_settings = relationship("InvestmentSettings", back_populates="persona_message", uselist=False)
+	

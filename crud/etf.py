@@ -13,19 +13,20 @@ def get_etf_by_symbol(db: Session, symbol: str):
 
 # 사용자 포트폴리오 관련 CRUD
 def get_user_etfs(db: Session, setting_id: int):
-    return db.query(InvestmentEtf).options(
+    etfs = db.query(InvestmentEtf).options(
         joinedload(InvestmentEtf.etf)
     ).filter(InvestmentEtf.setting_id == setting_id).all()
+    return [etf.etf for etf in etfs]
 
-def get_user_etf_by_setting_id(db: Session, setting_id: int):
-    return db.query(InvestmentEtf).filter(InvestmentEtf.setting_id == setting_id).first()
+def get_user_etf_by_etf_id(db: Session, etf_id: int):
+    return db.query(InvestmentEtf).filter(InvestmentEtf.etf_id == etf_id).first()
 
 def update_user_etf(db: Session, setting_id: int, etf: UserETFUpdate):
-    db_etf = get_user_etf_by_setting_id(db, setting_id)
+    db_etf = get_user_etf_by_etf_id(db, etf.etf_id)
     if db_etf:
-        return None
+        return db_etf
     
-    create_user_etf(db, setting_id, etf)
+    return create_user_etf(db, setting_id, etf)
 
 def create_user_etf(db: Session, setting_id: int, etf: UserETFUpdate):
     db_etf = InvestmentEtf(
