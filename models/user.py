@@ -11,8 +11,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, unique=True, index=True, nullable=False)  # 로그인용 고유 아이디
     hashed_password = Column(String, nullable=False)
-    name = Column(String, nullable=True)  # 실명/닉네임
-    email = Column(String, unique=True, index=True, nullable=True)
+    name = Column(String, nullable=False)  # 실명/닉네임
+    email = Column(String, unique=True, index=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -30,8 +30,10 @@ class InvestmentSettings(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
     risk_level = Column(Integer, default=5)
-    api_key = Column(String, nullable=True)
-    model_type = Column(String, default="gpt-4o")
+    api_key = Column(String, nullable=False)
+    model_type = Column(String, nullable=False)
+    monthly_investment = Column(Integer)
+    persona = Column(Integer, ForeignKey("chat_messages.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
