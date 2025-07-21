@@ -68,7 +68,8 @@ async def send_message_stream(
         try:
             # 6. AI 서버에 전체 대화 히스토리 전송
             async with httpx.AsyncClient() as client:
-                response = await client.post(
+                async with client.stream(
+					"POST",
                     "http://localhost:8001/chat/stream",
                     json={
                         "messages": messages,  # 전체 대화 히스토리
@@ -76,27 +77,27 @@ async def send_message_stream(
                         "model_type": model_type
                     },
                     timeout=60.0
-                )
-                response.raise_for_status()
-                
-                full_response = ""
-                async for line in response.aiter_lines():
-                    if line.startswith('data: '):
-                        data = line[6:]  # 'data: ' 제거
-                        if data == '[DONE]':
-                            break
-                        try:
-                            parsed = json.loads(data)
-                            if 'content' in parsed:
-                                full_response += parsed['content']
-                                yield f"data: {json.dumps({'content': parsed['content']})}\n\n"
-                        except json.JSONDecodeError:
-                            yield f"data: {json.dumps({'content': data})}\n\n"
-                
-                # 7. AI 응답을 DB에 저장
-                save_message(db, user_id, "assistant", full_response)
-                
-                yield "data: [DONE]\n\n"
+                ) as response:
+                    response.raise_for_status()
+                    
+                    full_response = ""
+                    async for line in response.aiter_lines():
+                        if line.startswith('data: '):
+                            data = line[6:]  # 'data: ' 제거
+                            if data == '[DONE]':
+                                break
+                            try:
+                                parsed = json.loads(data)
+                                if 'content' in parsed:
+                                    full_response += parsed['content']
+                                    yield f"data: {json.dumps({'content': parsed['content']})}\n\n"
+                            except json.JSONDecodeError:
+                                yield f"data: {json.dumps({'content': data})}\n\n"
+                    
+                    # 7. AI 응답을 DB에 저장
+                    save_message(db, user_id, "assistant", full_response)
+                    
+                    yield "data: [DONE]\n\n"
                             
         except Exception as e:
             error_message = f"AI 서비스 오류: {str(e)}"
@@ -105,10 +106,9 @@ async def send_message_stream(
     
     return StreamingResponse(
         generate_stream(),
-        media_type="text/plain",
+        media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "Content-Type": "text/event-stream"
         }
     ) 
