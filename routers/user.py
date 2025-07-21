@@ -1,19 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from database import SessionLocal
+from database import SessionLocal, get_db
 from schemas.user import UserCreate, UserLogin
 from crud.user import get_user_by_userId, create_user, get_user_by_email
 from utils.security import verify_password
-from utils.auth import create_access_token, get_current_user
+from utils.auth import create_access_token
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user_endpoint(user: UserCreate, db: Session = Depends(get_db)):
@@ -45,13 +38,4 @@ def login_endpoint(user: UserLogin, db: Session = Depends(get_db)):
         "name": db_user.name,
         "access_token": access_token,
         "token_type": "bearer"
-    }
-
-@router.get("/users/me")
-def get_me(current_user=Depends(get_current_user)):
-    return {
-        "user_id": current_user.user_id,
-        "name": current_user.name,
-        "email": current_user.email,
-        "created_at": current_user.created_at
     }

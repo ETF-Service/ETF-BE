@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
 from models.chat import ChatMessage
-from schemas.chat import ChatMessageCreate
 from typing import List
 
 def save_message(db: Session, user_id: int, role: str, content: str) -> ChatMessage:

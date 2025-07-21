@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 class ChatMessageBase(BaseModel):
     content: str
@@ -19,7 +19,7 @@ class ChatMessage(ChatMessageBase):
         from_attributes = True
 
 class ChatHistory(BaseModel):
-    messages: List[ChatMessage]
+    messages: Sequence[ChatMessage]
     total_count: int 
 
 class ChatResponse(BaseModel):

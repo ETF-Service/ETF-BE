@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from database import SessionLocal
+from database import SessionLocal, get_db
 from schemas.etf import (
     ETF, UserETFUpdate, 
-    InvestmentSettings, InvestmentSettingsCreate, InvestmentSettingsUpdate,
+    InvestmentSettingsCreate, InvestmentSettingsUpdate,
     InvestmentSettingsResponse, ETFBase, UserETFResponse
 )
 from crud.etf import (
@@ -16,13 +16,6 @@ from crud.user import get_user_by_userId
 from utils.auth import get_current_user
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # ETF 목록 조회
 @router.get("/etfs", response_model=List[ETF])
