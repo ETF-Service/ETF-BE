@@ -1,8 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
-from typing import cast
 from models.etf import ETF, InvestmentEtf
 from models.user import InvestmentSettings
-from schemas.etf import UserETFUpdate, InvestmentSettingsCreate, InvestmentSettingsUpdate
+from schemas.etf import UserETFUpdate, InvestmentSettingsUpdate
 
 # ETF 관련 CRUD
 def get_all_etfs(db: Session):
@@ -11,7 +10,6 @@ def get_all_etfs(db: Session):
 def get_etf_by_symbol(db: Session, symbol: str):
     return db.query(ETF).filter(ETF.symbol == symbol).first()
 
-# 사용자 포트폴리오 관련 CRUD
 def get_user_etfs(db: Session, setting_id: int):
     etfs = db.query(InvestmentEtf).options(
         joinedload(InvestmentEtf.etf)
@@ -45,12 +43,14 @@ def create_user_etf(db: Session, setting_id: int, etf: UserETFUpdate):
 def get_user_settings(db: Session, user_id: int):
     return db.query(InvestmentSettings).filter(InvestmentSettings.user_id == user_id).first()
 
-def create_user_settings(db: Session, user_id: int, settings: InvestmentSettingsCreate):
+def create_user_settings(db: Session, user_id: int, settings: InvestmentSettingsUpdate):
     db_settings = InvestmentSettings(
         user_id=user_id,
         risk_level=settings.risk_level,
         api_key=settings.api_key,
-        model_type=settings.model_type
+        model_type=settings.model_type,
+        monthly_investment=settings.monthly_investment,
+        persona=settings.persona
     )
     db.add(db_settings)
     db.commit()
@@ -62,7 +62,7 @@ def update_user_settings(db: Session, user_id: int, settings: InvestmentSettings
     if not db_settings:
         return None
     
-    update_data = settings.dict(exclude_unset=True)
+    update_data = settings.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_settings, field, value)
     

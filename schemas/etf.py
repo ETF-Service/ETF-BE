@@ -47,14 +47,12 @@ class InvestmentSettingsBase(BaseModel):
     monthly_investment: float = 10.0
     persona: Optional[str] = None
 
-class InvestmentSettingsCreate(InvestmentSettingsBase):
-    pass
-
 class InvestmentSettingsUpdate(BaseModel):
     risk_level: Optional[int] = None
     api_key: Optional[str] = None
     model_type: Optional[str] = None
     monthly_investment: Optional[float] = None
+    persona: Optional[str] = None
 
 class InvestmentSettings(InvestmentSettingsBase):
     id: int
