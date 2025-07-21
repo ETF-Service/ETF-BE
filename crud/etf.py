@@ -19,25 +19,36 @@ def get_user_etfs(db: Session, setting_id: int):
 def get_user_etf_by_etf_id(db: Session, etf_id: int):
     return db.query(InvestmentEtf).filter(InvestmentEtf.etf_id == etf_id).first()
 
-def update_user_etf(db: Session, setting_id: int, etf: UserETFUpdate):
-    db_etf = get_user_etf_by_etf_id(db, etf.etf_id)
-    if db_etf:
-        return db_etf
-    
-    return create_user_etf(db, setting_id, etf)
+def get_user_investment_etfs(db: Session, setting_id: int):
+    return db.query(InvestmentEtf).filter(InvestmentEtf.setting_id == setting_id).all()
 
-def create_user_etf(db: Session, setting_id: int, etf: UserETFUpdate):
+def delete_user_etf(db: Session, setting_id: int):
+    db_etfs = get_user_investment_etfs(db, setting_id)
+    for db_etf in db_etfs:
+        db.delete(db_etf)
+    db.commit()
+    return get_user_investment_etfs(db, setting_id)  
+
+def update_user_etf(db: Session, setting_id: int, settings: InvestmentSettingsUpdate):
+    if settings.etf_symbols:
+        delete_user_etf(db, setting_id)
+        for etf_symbol in settings.etf_symbols:
+            etf = get_etf_by_symbol(db, etf_symbol)
+            if not etf:
+                continue
+            etf_id = getattr(etf, 'id')
+            create_user_etf(db, setting_id, etf_id)
+    return get_user_etfs(db, setting_id)
+
+def create_user_etf(db: Session, setting_id: int, etf_id: int):
     db_etf = InvestmentEtf(
         setting_id=setting_id,
-        etf_id=etf.etf_id,
+        etf_id=etf_id,
     )
     db.add(db_etf)
     db.commit()
     db.refresh(db_etf)
-
-    return db.query(InvestmentEtf).options(
-        joinedload(InvestmentEtf.etf)
-    ).filter(InvestmentEtf.id == db_etf.id).first()
+    return db_etf
     
 # 투자 설정 관련 CRUD
 def get_user_settings(db: Session, user_id: int):
@@ -55,6 +66,8 @@ def create_user_settings(db: Session, user_id: int, settings: InvestmentSettings
     db.add(db_settings)
     db.commit()
     db.refresh(db_settings)
+    setting_id = getattr(db_settings, 'id')
+    update_user_etf(db, setting_id, settings)
     return db_settings
 
 def update_user_settings(db: Session, user_id: int, settings: InvestmentSettingsUpdate):
@@ -68,6 +81,8 @@ def update_user_settings(db: Session, user_id: int, settings: InvestmentSettings
     
     db.commit()
     db.refresh(db_settings)
+    setting_id = getattr(db_settings, 'id')
+    update_user_etf(db, setting_id, settings)
     return db_settings
 
 # 초기 ETF 데이터 생성

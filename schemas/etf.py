@@ -26,7 +26,7 @@ class UserETFBase(BaseModel):
     setting_id: int
 
 class UserETFUpdate(BaseModel):
-    etf_id: int
+    etf_symbols: List[str]
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -53,6 +53,7 @@ class InvestmentSettingsUpdate(BaseModel):
     model_type: Optional[str] = None
     monthly_investment: Optional[float] = None
     persona: Optional[str] = None
+    etf_symbols: Optional[List[str]] = None
 
 class InvestmentSettings(InvestmentSettingsBase):
     id: int
@@ -65,3 +66,4 @@ class InvestmentSettings(InvestmentSettingsBase):
 
 class InvestmentSettingsResponse(BaseModel):
     settings: Optional[InvestmentSettings] = None 
+    etfs: Optional[Sequence[ETF]] = None

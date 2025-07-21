@@ -29,7 +29,8 @@ def get_my_investment_settings(current_user: str = Depends(get_current_user), db
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     user_id = getattr(user, 'id')
     settings = get_user_settings(db, user_id)
-    return InvestmentSettingsResponse(settings=settings)
+    etfs = get_user_etfs(db, user_id)
+    return InvestmentSettingsResponse(settings=settings, etfs=etfs)
 
 # 투자 설정 생성/수정
 @router.put("/users/me/settings", response_model=InvestmentSettingsResponse)
@@ -45,8 +46,7 @@ async def upsert_my_settings(
     user_id = getattr(user, 'id')
     existing_settings = get_user_settings(db, user_id)
 
-    etfs = get_user_etfs(db, user_id)
-    etf_symbols = [etf.symbol for etf in etfs]
+    etf_symbols = settings.etf_symbols
 
     try:
         async with httpx.AsyncClient() as client:
@@ -71,33 +71,3 @@ async def upsert_my_settings(
         new_settings = create_user_settings(db, user_id, settings)
         return InvestmentSettingsResponse(settings=new_settings)
 
-# ETF 목록 조회
-@router.get("/users/me/etf", response_model=UserETFResponse)
-def get_my_etf(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
-    user = get_user_by_userId(db, current_user)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
-    user_id = getattr(user, 'id')
-    setting = get_user_settings(db, user_id)
-    if not setting:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="설정을 찾을 수 없습니다.")
-    setting_id = getattr(setting, 'id')
-    etfs = get_user_etfs(db, setting_id)
-    return UserETFResponse(etfs=etfs)
-
-# ETF 정보 수정
-@router.put("/users/me/etf", response_model=UserETFUpdate)
-def update_my_etf(
-    etf: UserETFUpdate,
-    current_user: str = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    user = get_user_by_userId(db, current_user)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
-    user_id = getattr(user, 'id')
-    setting = get_user_settings(db, user_id)
-    if not setting:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="설정을 찾을 수 없습니다.")
-    setting_id = getattr(setting, 'id')
-    return update_user_etf(db, setting_id, etf)
