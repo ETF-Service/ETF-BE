@@ -8,7 +8,7 @@ from schemas.etf import (
 from crud.etf import (
     get_all_etfs, update_user_etf,
     get_user_settings, create_user_settings, update_user_settings,
-    get_user_etfs,
+    get_user_etfs, get_user_investment_settings,
 )
 from crud.user import get_user_by_userId
 from utils.auth import get_current_user
@@ -29,7 +29,7 @@ def get_my_investment_settings(current_user: str = Depends(get_current_user), db
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
     user_id = getattr(user, 'id')
     settings = get_user_settings(db, user_id)
-    etfs = get_user_etfs(db, user_id)
+    etfs = get_user_etfs(db, settings.id)
     return InvestmentSettingsResponse(settings=settings, etfs=etfs)
 
 # 투자 설정 생성/수정
@@ -42,9 +42,6 @@ async def upsert_my_settings(
     user = get_user_by_userId(db, current_user)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다.")
-    
-    user_id = getattr(user, 'id')
-    existing_settings = get_user_settings(db, user_id)
 
     etf_symbols = settings.etf_symbols
 
@@ -61,13 +58,25 @@ async def upsert_my_settings(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     
+    user_id = getattr(user, 'id')
+    existing_settings = get_user_settings(db, user_id)
+
+    print(user.user_id)
+    print(user_id)
+    
     if existing_settings:
         # 기존 설정이 있으면 수정
         updated_settings = update_user_settings(db, user_id, settings)
+        print(updated_settings.etf_symbols)
+        etfs = get_user_etfs(db, user_id)
+        for etf in etfs:
+            print(etf.symbol)
         if not updated_settings:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="설정을 찾을 수 없습니다.")
+        get_user_investment_settings(db, user_id)
         return InvestmentSettingsResponse(settings=updated_settings)
     else:
         new_settings = create_user_settings(db, user_id, settings)
+        get_user_investment_settings(db, user_id)
         return InvestmentSettingsResponse(settings=new_settings)
 
