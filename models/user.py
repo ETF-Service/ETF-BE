@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -16,6 +16,7 @@ class User(Base):
 
     settings = relationship("InvestmentSettings", back_populates="user", uselist=False)
     chat_messages = relationship("ChatMessage", back_populates="user")
+    notifications = relationship("Notification", back_populates="user")
 
 class InvestmentSettings(Base):
     __tablename__ = "investment_settings"
@@ -25,6 +26,9 @@ class InvestmentSettings(Base):
     api_key = Column(String, nullable=False)
     model_type = Column(String, nullable=False)
     persona = Column(String, nullable=True)
+    # 알림 설정 필드 추가
+    notification_enabled = Column(Boolean, default=True)
+    notification_channels = Column(String(100), default='app')  # 'app,email,sms'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
