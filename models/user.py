@@ -29,5 +29,5 @@ class InvestmentSettings(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    etfs = relationship("InvestmentEtf", back_populates="setting")
+    etfs = relationship("InvestmentETFSettings", back_populates="setting")
     user = relationship("User", back_populates="settings", uselist=False)

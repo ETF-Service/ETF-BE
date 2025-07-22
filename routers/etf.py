@@ -3,12 +3,17 @@ from sqlalchemy.orm import Session
 from typing import List
 from database import get_db
 from schemas.etf import (
-    ETF, UserETFUpdate, InvestmentSettingsUpdate, InvestmentSettingsResponse, UserETFResponse
+    ETF, UserETFUpdate, InvestmentSettingsUpdate, InvestmentSettingsResponse, UserETFResponse,
+    ETFInvestmentSettingBase, ETFInvestmentSettingUpdate, ETFInvestmentSetting, ETFInvestmentSettingsRequest, ETFInvestmentSettingsResponse
 )
 from crud.etf import (
     get_all_etfs, update_user_etf,
     get_user_settings, create_user_settings, update_user_settings,
     get_user_etfs, get_user_investment_settings,
+    # [추가]
+    get_etf_investment_settings, get_etf_investment_setting,
+    upsert_etf_investment_settings, update_etf_investment_setting, delete_etf_investment_setting,
+    migrate_existing_etf_settings, get_etf_by_id
 )
 from crud.user import get_user_by_userId
 from utils.auth import get_current_user
@@ -181,4 +186,150 @@ def get_my_etfs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="ETF 목록 조회에 실패했습니다."
         )
+
+# === [추가] 마이그레이션 API ===
+@router.post("/migrate-etf-settings")
+def migrate_etf_settings(db: Session = Depends(get_db)):
+    """기존 ETF 데이터에 기본 투자 설정 추가 (개발용)"""
+    try:
+        updated_count = migrate_existing_etf_settings(db)
+        db.commit()
+        return {
+            "message": f"ETF 설정 마이그레이션 완료",
+            "updated_count": updated_count
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"ETF 설정 마이그레이션 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="마이그레이션에 실패했습니다.")
+
+# === [추가] ETF별 개별 투자 설정 API ===
+@router.get("/users/me/etf-settings", response_model=ETFInvestmentSettingsResponse)
+def get_my_etf_investment_settings(
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """내 ETF별 투자 설정 전체 조회"""
+    try:
+        user = get_user_by_userId(db, current_user)
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        settings = get_user_settings(db, user.id)
+        if not settings:
+            raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
+        etf_settings = get_etf_investment_settings(db, settings.id)
+        for etf_setting in etf_settings:
+            etf = get_etf_by_id(db, etf_setting.etf_id)
+            etf_setting.name = etf.name
+            etf_setting.symbol = etf.symbol
+        return ETFInvestmentSettingsResponse(etf_settings=etf_settings)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ETF별 투자 설정 전체 조회 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="ETF별 투자 설정 전체 조회에 실패했습니다.")
+
+@router.put("/users/me/etf-settings", response_model=ETFInvestmentSettingsResponse)
+def put_my_etf_investment_settings(
+    req: ETFInvestmentSettingsRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """내 ETF별 투자 설정 일괄 저장/수정 (전체 교체)"""
+    try:
+        user = get_user_by_userId(db, current_user)
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        settings = get_user_settings(db, user.id)
+        if not settings:
+            raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
+        etf_settings = upsert_etf_investment_settings(db, settings.id, req.etf_settings)
+        db.commit()
+        return ETFInvestmentSettingsResponse(etf_settings=etf_settings)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"ETF별 투자 설정 저장 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="ETF별 투자 설정 저장에 실패했습니다.")
+
+@router.get("/users/me/etf-settings/{etf_symbol}", response_model=ETFInvestmentSetting)
+def get_my_etf_investment_setting(
+    etf_symbol: str,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """내 ETF별 투자 설정 단건 조회"""
+    try:
+        user = get_user_by_userId(db, current_user)
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        settings = get_user_settings(db, user.id)
+        if not settings:
+            raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
+        etf_setting = get_etf_investment_setting(db, settings.id, etf_symbol)
+        if not etf_setting:
+            raise HTTPException(status_code=404, detail="ETF별 투자 설정을 찾을 수 없습니다.")
+        return etf_setting
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ETF별 투자 설정 단건 조회 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="ETF별 투자 설정 단건 조회에 실패했습니다.")
+
+@router.put("/users/me/etf-settings/{etf_symbol}", response_model=ETFInvestmentSetting)
+def put_my_etf_investment_setting(
+    etf_symbol: str,
+    update: ETFInvestmentSettingUpdate,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """내 ETF별 투자 설정 단건 수정"""
+    try:
+        user = get_user_by_userId(db, current_user)
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        settings = get_user_settings(db, user.id)
+        if not settings:
+            raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
+        etf_setting = update_etf_investment_setting(db, settings.id, etf_symbol, update)
+        db.commit()
+        if not etf_setting:
+            raise HTTPException(status_code=404, detail="ETF별 투자 설정을 찾을 수 없습니다.")
+        return etf_setting
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"ETF별 투자 설정 단건 수정 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="ETF별 투자 설정 단건 수정에 실패했습니다.")
+
+@router.delete("/users/me/etf-settings/{etf_symbol}")
+def delete_my_etf_investment_setting(
+    etf_symbol: str,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """내 ETF별 투자 설정 단건 삭제"""
+    try:
+        user = get_user_by_userId(db, current_user)
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        settings = get_user_settings(db, user.id)
+        if not settings:
+            raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
+        result = delete_etf_investment_setting(db, settings.id, etf_symbol)
+        db.commit()
+        if not result:
+            raise HTTPException(status_code=404, detail="ETF별 투자 설정을 찾을 수 없습니다.")
+        return {"message": "ETF별 투자 설정이 삭제되었습니다."}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"ETF별 투자 설정 단건 삭제 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="ETF별 투자 설정 단건 삭제에 실패했습니다.")
 

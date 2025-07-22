@@ -11,14 +11,18 @@ class ETF(Base):
     name = Column(String)  # 미국 S&P500, 미국 나스닥 등
     description = Column(String, nullable=True)
 
-    settings = relationship("InvestmentEtf", back_populates="etf")
+    settings = relationship("InvestmentETFSettings", back_populates="etf")
 
-class InvestmentEtf(Base):
+class InvestmentETFSettings(Base):
     __tablename__ = "investment_etfs"
     
     id = Column(Integer, primary_key=True, index=True)
     setting_id = Column(Integer, ForeignKey("investment_settings.id"))
     etf_id = Column(Integer, ForeignKey("etfs.id"))
+    # 개별 ETF 투자 설정
+    cycle = Column(String, nullable=False)   # 투자 주기: daily/weekly/monthly
+    day = Column(Integer, nullable=False)    # 투자 일: 요일(0~6) 또는 일(1~28)
+    amount = Column(Float, nullable=False)   # 투자 금액(만원)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
