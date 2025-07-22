@@ -13,7 +13,7 @@ from crud.etf import (
     # [추가]
     get_etf_investment_settings, get_etf_investment_setting,
     upsert_etf_investment_settings, update_etf_investment_setting, delete_etf_investment_setting,
-    migrate_existing_etf_settings, get_etf_by_id
+    get_etf_by_id
 )
 from crud.user import get_user_by_userId
 from utils.auth import get_current_user
@@ -186,22 +186,6 @@ def get_my_etfs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="ETF 목록 조회에 실패했습니다."
         )
-
-# === [추가] 마이그레이션 API ===
-@router.post("/migrate-etf-settings")
-def migrate_etf_settings(db: Session = Depends(get_db)):
-    """기존 ETF 데이터에 기본 투자 설정 추가 (개발용)"""
-    try:
-        updated_count = migrate_existing_etf_settings(db)
-        db.commit()
-        return {
-            "message": f"ETF 설정 마이그레이션 완료",
-            "updated_count": updated_count
-        }
-    except Exception as e:
-        db.rollback()
-        logger.error(f"ETF 설정 마이그레이션 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="마이그레이션에 실패했습니다.")
 
 # === [추가] ETF별 개별 투자 설정 API ===
 @router.get("/users/me/etf-settings", response_model=ETFInvestmentSettingsResponse)

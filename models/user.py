@@ -24,7 +24,6 @@ class InvestmentSettings(Base):
     risk_level = Column(Integer, default=5)
     api_key = Column(String, nullable=False)
     model_type = Column(String, nullable=False)
-    monthly_investment = Column(Float, default=10.0) # 만원 단위
     persona = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

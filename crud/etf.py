@@ -138,7 +138,6 @@ def create_user_settings(db: Session, user_id: int, settings: InvestmentSettings
             risk_level=settings.risk_level,
             api_key=settings.api_key,
             model_type=settings.model_type,
-            monthly_investment=settings.monthly_investment,
             persona=settings.persona
         )
         db.add(db_settings)
@@ -181,33 +180,6 @@ def get_user_investment_settings(db: Session, user_id: int) -> List[InvestmentSe
     except SQLAlchemyError as e:
         db.rollback()
         raise Exception(f"투자 설정 목록 조회 실패: {str(e)}")
-
-# === [추가] 기존 ETF 데이터 마이그레이션 ===
-def migrate_existing_etf_settings(db: Session) -> int:
-    """기존 ETF 데이터에 기본 투자 설정 추가 (마이그레이션용)"""
-    try:
-        # 투자 설정이 없는 ETF 데이터 조회
-        existing_etfs = db.query(InvestmentETFSettings).filter(
-            (InvestmentETFSettings.cycle.is_(None)) | 
-            (InvestmentETFSettings.day.is_(None)) | 
-            (InvestmentETFSettings.amount.is_(None))
-        ).all()
-        
-        updated_count = 0
-        for etf in existing_etfs:
-            if etf.cycle is None:
-                etf.cycle = "monthly"
-            if etf.day is None:
-                etf.day = 1
-            if etf.amount is None:
-                etf.amount = 10.0
-            updated_count += 1
-        
-        db.flush()
-        return updated_count
-    except SQLAlchemyError as e:
-        db.rollback()
-        raise Exception(f"ETF 설정 마이그레이션 실패: {str(e)}")
 
 # 초기 ETF 데이터 생성
 def create_initial_etfs(db: Session) -> None:

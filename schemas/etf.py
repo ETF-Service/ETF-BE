@@ -77,14 +77,12 @@ class InvestmentSettingsBase(BaseModel):
     risk_level: int = 5
     api_key: Optional[str] = None
     model_type: str = "clova-x"
-    monthly_investment: float = 10.0
     persona: Optional[str] = None
 
 class InvestmentSettingsUpdate(BaseModel):
     risk_level: Optional[int] = None
     api_key: Optional[str] = None
     model_type: Optional[str] = None
-    monthly_investment: Optional[float] = None
     persona: Optional[str] = None
     etf_symbols: Optional[List[str]] = None
 
