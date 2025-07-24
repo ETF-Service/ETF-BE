@@ -7,9 +7,9 @@ from schemas.etf import (
     ETFInvestmentSettingBase, ETFInvestmentSettingUpdate, ETFInvestmentSetting, ETFInvestmentSettingsRequest, ETFInvestmentSettingsResponse
 )
 from crud.etf import (
-    get_all_etfs, update_user_etf,
+    get_all_etfs, update_investment_etf_settings,
     get_user_settings, create_user_settings, update_user_settings,
-    get_user_etfs, get_user_investment_settings,
+    get_etfs_by_setting_id, get_user_investment_settings,
     # [추가]
     get_etf_investment_settings, get_etf_investment_setting,
     upsert_etf_investment_settings, update_etf_investment_setting, delete_etf_investment_setting,
@@ -62,7 +62,7 @@ def get_my_investment_settings(
                 detail="투자 설정을 찾을 수 없습니다."
             )
         
-        etfs = get_user_etfs(db, settings.id)
+        etfs = get_etfs_by_setting_id(db, settings.id)
         return InvestmentSettingsResponse(settings=settings, etfs=etfs)
         
     except HTTPException:
@@ -136,7 +136,7 @@ async def upsert_my_settings(
             final_settings = new_settings
         
         # 5. ETF 목록 조회
-        etfs = get_user_etfs(db, final_settings.id)
+        etfs = get_etfs_by_setting_id(db, final_settings.id)
         
         # 6. 트랜잭션 커밋
         db.commit()
@@ -176,7 +176,7 @@ def get_my_etfs(
         if not settings:
             return []
         
-        return get_user_etfs(db, settings.id)
+        return get_etfs_by_setting_id(db, settings.id)
         
     except HTTPException:
         raise

@@ -7,6 +7,7 @@ from datetime import datetime
 from routers import user as user_router
 from routers import etf as etf_router
 from routers import chat as chat_router
+from routers import notification as notification_router
 from database import engine, Base
 from crud.etf import create_initial_etfs, get_all_etfs
 
@@ -65,6 +66,14 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️ ETF 데이터가 이미 존재하거나 초기화 실패: {e}")
         finally:
             db.close()
+        
+        # 알림 스케줄러 시작
+        try:
+            from services.scheduler_service import start_notification_scheduler
+            start_notification_scheduler()
+            logger.info("✅ 알림 스케줄러 시작 완료")
+        except Exception as e:
+            logger.warning(f"⚠️ 알림 스케줄러 시작 실패: {e}")
             
     except Exception as e:
         logger.error(f"❌ 서버 초기화 중 오류 발생: {e}")
@@ -75,6 +84,14 @@ async def lifespan(app: FastAPI):
     
     # 서버 종료 시 실행
     logger.info("서버 종료 중...")
+    
+    # 알림 스케줄러 중지
+    try:
+        from services.scheduler_service import stop_notification_scheduler
+        stop_notification_scheduler()
+        logger.info("✅ 알림 스케줄러 중지 완료")
+    except Exception as e:
+        logger.warning(f"⚠️ 알림 스케줄러 중지 실패: {e}")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -88,4 +105,5 @@ app.add_middleware(
 
 app.include_router(user_router.router)
 app.include_router(etf_router.router)
-app.include_router(chat_router.router) 
+app.include_router(chat_router.router)
+app.include_router(notification_router.router) 

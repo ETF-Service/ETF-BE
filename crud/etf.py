@@ -30,7 +30,7 @@ def get_etf_by_id(db: Session, id: int) -> Optional[ETF]:
         db.rollback()
         raise Exception(f"ETF 조회 실패: {str(e)}")
 
-def get_user_etfs(db: Session, setting_id: int) -> List[ETF]:
+def get_etfs_by_setting_id(db: Session, setting_id: int) -> List[ETF]:
     """사용자의 ETF 목록 조회 (최적화됨)"""
     try:
         investment_etfs = db.query(InvestmentETFSettings).options(
@@ -41,15 +41,7 @@ def get_user_etfs(db: Session, setting_id: int) -> List[ETF]:
         db.rollback()
         raise Exception(f"사용자 ETF 목록 조회 실패: {str(e)}")
 
-def get_user_etf_by_etf_id(db: Session, etf_id: int) -> Optional[InvestmentETFSettings]:
-    """ETF ID로 사용자 ETF 조회"""
-    try:
-        return db.query(InvestmentETFSettings).filter(InvestmentETFSettings.etf_id == etf_id).first()
-    except SQLAlchemyError as e:
-        db.rollback()
-        raise Exception(f"사용자 ETF 조회 실패: {str(e)}")
-
-def get_user_investment_etfs(db: Session, setting_id: int) -> List[InvestmentETFSettings]:
+def get_investment_etf_settings_by_setting_id(db: Session, setting_id: int) -> List[InvestmentETFSettings]:
     """사용자의 투자 ETF 목록 조회"""
     try:
         return db.query(InvestmentETFSettings).filter(InvestmentETFSettings.setting_id == setting_id).all()
@@ -57,26 +49,40 @@ def get_user_investment_etfs(db: Session, setting_id: int) -> List[InvestmentETF
         db.rollback()
         raise Exception(f"투자 ETF 목록 조회 실패: {str(e)}")
 
-def delete_user_etf(db: Session, setting_id: int) -> List[InvestmentETFSettings]:
+def get_investment_etf_settings_by_user_id(db: Session, user_id: int) -> List[InvestmentETFSettings]:
+    """사용자의 ETF 설정 목록 조회"""
+    try:
+        # 사용자의 투자 설정 조회
+        user_settings = get_user_settings(db, user_id)
+        if not user_settings:
+            return []
+        
+        # 해당 설정의 ETF 목록 조회
+        return get_investment_etf_settings_by_setting_id(db, user_settings.id)
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise Exception(f"사용자 ETF 설정 조회 실패: {str(e)}")
+
+def delete_investment_etf_settings_by_setting_id(db: Session, setting_id: int) -> List[InvestmentETFSettings]:
     """사용자의 ETF 삭제 (트랜잭션 안전)"""
     try:
-        db_etfs = get_user_investment_etfs(db, setting_id)
+        db_etfs = get_investment_etf_settings_by_setting_id(db, setting_id)
         for db_etf in db_etfs:
             db.delete(db_etf)
         # commit은 호출하는 함수에서 처리
-        return get_user_investment_etfs(db, setting_id)
+        return get_investment_etf_settings_by_setting_id(db, setting_id)
     except SQLAlchemyError as e:
         db.rollback()
         raise Exception(f"ETF 삭제 실패: {str(e)}")
 
-def update_user_etf(db: Session, setting_id: int, settings: InvestmentSettingsUpdate) -> List[ETF]:
+def update_investment_etf_settings(db: Session, setting_id: int, settings: InvestmentSettingsUpdate) -> List[ETF]:
     """사용자 ETF 업데이트 (기본 투자 설정 포함)"""
     try:
         if not settings.etf_symbols:
-            return get_user_etfs(db, setting_id)
+            return get_etfs_by_setting_id(db, setting_id)
         
         # 기존 ETF 삭제
-        delete_user_etf(db, setting_id)
+        delete_investment_etf_settings_by_setting_id(db, setting_id)	
         
         # 새로운 ETF 추가 (기본 투자 설정으로)
         invalid_symbols = []
@@ -99,7 +105,7 @@ def update_user_etf(db: Session, setting_id: int, settings: InvestmentSettingsUp
         if invalid_symbols:
             print(f"경고: 유효하지 않은 ETF 심볼들: {invalid_symbols}")
         
-        return get_user_etfs(db, setting_id)
+        return get_etfs_by_setting_id(db, setting_id)
     except SQLAlchemyError as e:
         db.rollback()
         raise Exception(f"ETF 업데이트 실패: {str(e)}")
@@ -145,7 +151,7 @@ def create_user_settings(db: Session, user_id: int, settings: InvestmentSettings
         
         # ETF 설정
         if settings.etf_symbols:
-            update_user_etf(db, db_settings.id, settings)
+            update_investment_etf_settings(db, db_settings.id, settings)
         
         return db_settings
     except SQLAlchemyError as e:
@@ -166,7 +172,7 @@ def update_user_settings(db: Session, user_id: int, settings: InvestmentSettings
         
         # ETF 설정 업데이트
         if settings.etf_symbols is not None:
-            update_user_etf(db, db_settings.id, settings)
+            update_investment_etf_settings(db, db_settings.id, settings)
         
         return db_settings
     except SQLAlchemyError as e:
