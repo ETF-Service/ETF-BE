@@ -68,4 +68,16 @@ def get_notification_time() -> int:
 
 def get_scheduler_interval() -> int:
     """스케줄러 실행 간격 반환 (초)"""
-    return SCHEDULER_INTERVAL 
+    return SCHEDULER_INTERVAL
+
+def get_notification_titles() -> dict:
+    """알림 제목 템플릿 반환"""
+    return NOTIFICATION_TITLES
+
+def get_notification_types() -> dict:
+    """알림 타입 정의 반환"""
+    return NOTIFICATION_TYPES
+
+def get_notification_channels() -> dict:
+    """알림 채널 정의 반환"""
+    return NOTIFICATION_CHANNELS 

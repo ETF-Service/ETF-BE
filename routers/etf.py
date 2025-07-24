@@ -7,10 +7,9 @@ from schemas.etf import (
     ETFInvestmentSettingBase, ETFInvestmentSettingUpdate, ETFInvestmentSetting, ETFInvestmentSettingsRequest, ETFInvestmentSettingsResponse
 )
 from crud.etf import (
-    get_all_etfs, update_investment_etf_settings,
-    get_user_settings, create_user_settings, update_user_settings,
-    get_etfs_by_setting_id, get_user_investment_settings,
-    # [추가]
+    get_all_etfs,
+    get_investment_settings_by_user_id, create_investment_settings, update_investment_settings,
+    get_etfs_by_setting_id,
     get_etf_investment_settings, get_etf_investment_setting,
     upsert_etf_investment_settings, update_etf_investment_setting, delete_etf_investment_setting,
     get_etf_by_id
@@ -54,7 +53,7 @@ def get_my_investment_settings(
             )
         
         user_id = user.id
-        settings = get_user_settings(db, user_id)
+        settings = get_investment_settings_by_user_id(db, user_id)
         
         if not settings:
             raise HTTPException(
@@ -118,12 +117,12 @@ async def upsert_my_settings(
                 settings.persona = "기본 투자 상담사"
         
         # 3. 기존 설정 확인
-        existing_settings = get_user_settings(db, user_id)
+        existing_settings = get_investment_settings_by_user_id(db, user_id)
         
         # 4. 설정 생성 또는 수정
         if existing_settings:
             # 기존 설정 수정
-            updated_settings = update_user_settings(db, user_id, settings)
+            updated_settings = update_investment_settings(db, user_id, settings)
             if not updated_settings:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, 
@@ -132,7 +131,7 @@ async def upsert_my_settings(
             final_settings = updated_settings
         else:
             # 새 설정 생성
-            new_settings = create_user_settings(db, user_id, settings)
+            new_settings = create_investment_settings(db, user_id, settings)
             final_settings = new_settings
         
         # 5. ETF 목록 조회
@@ -171,7 +170,7 @@ def get_my_etfs(
             )
         
         user_id = user.id
-        settings = get_user_settings(db, user_id)
+        settings = get_investment_settings_by_user_id(db, user_id)
         
         if not settings:
             return []
@@ -198,7 +197,7 @@ def get_my_etf_investment_settings(
         user = get_user_by_userId(db, current_user)
         if not user:
             raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-        settings = get_user_settings(db, user.id)
+        settings = get_investment_settings_by_user_id(db, user.id)
         if not settings:
             raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
         etf_settings = get_etf_investment_settings(db, settings.id)
@@ -224,7 +223,7 @@ def put_my_etf_investment_settings(
         user = get_user_by_userId(db, current_user)
         if not user:
             raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-        settings = get_user_settings(db, user.id)
+        settings = get_investment_settings_by_user_id(db, user.id)
         if not settings:
             raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
         etf_settings = upsert_etf_investment_settings(db, settings.id, req.etf_settings)
@@ -249,7 +248,7 @@ def get_my_etf_investment_setting(
         user = get_user_by_userId(db, current_user)
         if not user:
             raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-        settings = get_user_settings(db, user.id)
+        settings = get_investment_settings_by_user_id(db, user.id)
         if not settings:
             raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
         etf_setting = get_etf_investment_setting(db, settings.id, etf_symbol)
@@ -274,7 +273,7 @@ def put_my_etf_investment_setting(
         user = get_user_by_userId(db, current_user)
         if not user:
             raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-        settings = get_user_settings(db, user.id)
+        settings = get_investment_settings_by_user_id(db, user.id)
         if not settings:
             raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
         etf_setting = update_etf_investment_setting(db, settings.id, etf_symbol, update)
@@ -301,7 +300,7 @@ def delete_my_etf_investment_setting(
         user = get_user_by_userId(db, current_user)
         if not user:
             raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-        settings = get_user_settings(db, user.id)
+        settings = get_investment_settings_by_user_id(db, user.id)
         if not settings:
             raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
         result = delete_etf_investment_setting(db, settings.id, etf_symbol)

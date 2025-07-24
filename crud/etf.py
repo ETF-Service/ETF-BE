@@ -53,7 +53,7 @@ def get_investment_etf_settings_by_user_id(db: Session, user_id: int) -> List[In
     """사용자의 ETF 설정 목록 조회"""
     try:
         # 사용자의 투자 설정 조회
-        user_settings = get_user_settings(db, user_id)
+        user_settings = get_investment_settings_by_user_id(db, user_id)
         if not user_settings:
             return []
         
@@ -128,7 +128,7 @@ def create_user_etf(db: Session, setting_id: int, etf_id: int, cycle: str = "mon
         raise Exception(f"ETF 생성 실패: {str(e)}")
     
 # 투자 설정 관련 CRUD
-def get_user_settings(db: Session, user_id: int) -> Optional[InvestmentSettings]:
+def get_investment_settings_by_user_id(db: Session, user_id: int) -> Optional[InvestmentSettings]:
     """사용자 투자 설정 조회"""
     try:
         return db.query(InvestmentSettings).filter(InvestmentSettings.user_id == user_id).first()
@@ -136,7 +136,7 @@ def get_user_settings(db: Session, user_id: int) -> Optional[InvestmentSettings]
         db.rollback()
         raise Exception(f"투자 설정 조회 실패: {str(e)}")
 
-def create_user_settings(db: Session, user_id: int, settings: InvestmentSettingsUpdate) -> InvestmentSettings:
+def create_investment_settings(db: Session, user_id: int, settings: InvestmentSettingsUpdate) -> InvestmentSettings:
     """사용자 투자 설정 생성"""
     try:
         db_settings = InvestmentSettings(
@@ -158,10 +158,10 @@ def create_user_settings(db: Session, user_id: int, settings: InvestmentSettings
         db.rollback()
         raise Exception(f"투자 설정 생성 실패: {str(e)}")
 
-def update_user_settings(db: Session, user_id: int, settings: InvestmentSettingsUpdate) -> Optional[InvestmentSettings]:
+def update_investment_settings(db: Session, user_id: int, settings: InvestmentSettingsUpdate) -> Optional[InvestmentSettings]:
     """사용자 투자 설정 업데이트"""
     try:
-        db_settings = get_user_settings(db, user_id)
+        db_settings = get_investment_settings_by_user_id(db, user_id)
         if not db_settings:
             return None
         
@@ -178,14 +178,6 @@ def update_user_settings(db: Session, user_id: int, settings: InvestmentSettings
     except SQLAlchemyError as e:
         db.rollback()
         raise Exception(f"투자 설정 업데이트 실패: {str(e)}")
-
-def get_user_investment_settings(db: Session, user_id: int) -> List[InvestmentSettings]:
-    """사용자의 모든 투자 설정 조회"""
-    try:
-        return db.query(InvestmentSettings).filter(InvestmentSettings.user_id == user_id).all()
-    except SQLAlchemyError as e:
-        db.rollback()
-        raise Exception(f"투자 설정 목록 조회 실패: {str(e)}")
 
 # 초기 ETF 데이터 생성
 def create_initial_etfs(db: Session) -> None:

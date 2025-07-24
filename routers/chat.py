@@ -8,7 +8,7 @@ import os
 from database import get_db
 from schemas.chat import ChatHistory, ChatResponse
 from crud.user import get_user_by_userId
-from crud.etf import get_user_settings
+from crud.etf import get_investment_settings_by_user_id
 from crud.chat import save_message, get_chat_history_asc, get_message_count
 from utils.auth import get_current_user
 
@@ -65,7 +65,7 @@ async def send_message_stream(
         save_message(db, user_id, "user", message.content)
         
         # 3. 사용자 설정 조회
-        setting = get_user_settings(db, user_id)
+        setting = get_investment_settings_by_user_id(db, user_id)
         if not setting:
             raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
         

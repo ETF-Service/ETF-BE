@@ -12,18 +12,11 @@ from typing import List
 import asyncio
 
 from database import SessionLocal
-from crud.notification import create_notification, get_users_with_notifications_enabled
+from crud.notification import get_users_with_notifications_enabled
 from crud.etf import get_investment_etf_settings_by_user_id, get_etf_by_id
 from crud.user import get_user_by_id
-from schemas.notification import NotificationCreate
-from config.notification_config import (
-    get_scheduler_interval,
-    get_notification_time,
-    NOTIFICATION_TYPES,
-    NOTIFICATION_TITLES,
-    NOTIFICATION_CONTENT_TEMPLATES
-)
 from services.ai_service import analyze_investment_decision
+from services.notification_service import notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +28,12 @@ class NotificationScheduler:
     def start(self):
         """스케줄러 시작"""
         if not self.is_running:
-            # 매일 1시간마다 실행 (매시 정각)
+            # 테스트용: 5분마다 실행
             self.scheduler.add_job(
                 self.check_investment_dates,
-                CronTrigger(hour='*', minute=0),  # 매시 정각
+                CronTrigger(minute='*/5'),  # 5분마다
                 id='investment_notification_check',
-                name='투자일 알림 체크',
+                name='투자일 알림 체크 (테스트용)',
                 replace_existing=True
             )
             
@@ -100,25 +93,24 @@ class NotificationScheduler:
                         'user_setting': user_setting,
                         'etf_setting': etf_setting
                     })
+                    break  # 한 사용자당 하나의 투자일만 처리
         
         return today_investors
     
     def is_investment_day(self, etf_setting, today_weekday: int, today_day: int) -> bool:
-        """오늘이 투자일인지 확인"""
-        cycle = etf_setting.cycle
-        day = etf_setting.day
-        
-        if cycle == 'daily':
+        """투자일 여부 확인"""
+        if etf_setting.cycle == 'daily':
             return True
-        elif cycle == 'weekly':
-            return today_weekday == day  # 0=월요일, 6=일요일 (Python datetime.weekday() 기준)
-        elif cycle == 'monthly':
-            return today_day == day  # 1-31
-        else:
-            return False
+        elif etf_setting.cycle == 'weekly':
+            # 요일 체크 (0=월요일, 6=일요일)
+            return today_weekday == etf_setting.day
+        elif etf_setting.cycle == 'monthly':
+            # 월 투자일 체크
+            return today_day == etf_setting.day
+        return False
     
     async def process_user_investment(self, db: Session, investor_data: dict):
-        """사용자별 투자 처리 및 알림 생성"""
+        """사용자 투자 처리"""
         user_setting = investor_data['user_setting']
         etf_setting = investor_data['etf_setting']
         
@@ -126,77 +118,49 @@ class NotificationScheduler:
             # 사용자 정보 조회
             user = get_user_by_id(db, user_setting.user_id)
             if not user:
-                logger.warning(f"⚠️ 사용자를 찾을 수 없음: {user_setting.user_id}")
+                logger.warning(f"⚠️ 사용자 {user_setting.user_id}를 찾을 수 없습니다")
                 return
             
             # ETF 정보 조회
             etf = get_etf_by_id(db, etf_setting.etf_id)
             if not etf:
-                logger.warning(f"⚠️ ETF를 찾을 수 없음: {etf_setting.etf_id}")
+                logger.warning(f"⚠️ ETF {etf_setting.etf_id}를 찾을 수 없습니다")
                 return
             
             logger.info(f"🤖 {user.name}님의 {etf.symbol} ETF AI 분석 시작...")
             
-            # AI 분석 요청
+            # AI 분석 수행
             analysis_result = await analyze_investment_decision(
-                user, user_setting, 
-                etf_setting, 
-                etf
+                user, user_setting, etf_setting, etf
             )
             
-            if analysis_result and analysis_result.get('should_notify', False):
-                # 알림 생성
-                await self.create_investment_notification(
-                    db, user, etf, etf_setting, analysis_result
-                )
-            else:
-                logger.info(f"ℹ️ {user.name}님의 {etf.symbol} ETF - 알림 불필요")
-                
-        except Exception as e:
-            logger.error(f"❌ 사용자 {user_setting.user_id} 처리 중 오류: {e}")
-    
-    async def create_investment_notification(
-        self, 
-        db: Session, 
-        user, 
-        etf, 
-        etf_setting, 
-        analysis_result: dict
-    ):
-        """투자 알림 생성"""
-        try:
-            # 알림 제목 및 내용 생성
-            title = NOTIFICATION_TITLES[NOTIFICATION_TYPES['AI_ANALYSIS']]
+            if not analysis_result:
+                logger.warning(f"⚠️ {user.name}님의 {etf.symbol} ETF AI 분석 실패")
+                return
             
-            content = NOTIFICATION_CONTENT_TEMPLATES['ai_analysis']
-            if analysis_result.get('recommendation'):
-                content += f"\n\n추천사항: {analysis_result['recommendation']}"
-            
-            # 알림 생성
-            notification_data = NotificationCreate(
-                user_id=user.id,
-                title=title,
-                content=content,
-                type=NOTIFICATION_TYPES['AI_ANALYSIS'],
-                sent_via='app'  # 기본적으로 앱 내 알림
+            # 알림 전송 (새로운 알림 서비스 사용)
+            await notification_service.send_ai_analysis_notification(
+                db, user, etf, analysis_result, analysis_result['should_notify']
             )
             
-            notification = create_notification(db, notification_data)
-            logger.info(f"✅ {user.name}님에게 {etf.symbol} ETF 알림 생성 완료")
+            # 투자일 알림도 함께 전송
+            etf_settings = [etf_setting]  # 단일 ETF 설정을 리스트로 변환
+            await notification_service.send_investment_reminder(
+                db, user, etf_settings
+            )
             
-            return notification
+            logger.info(f"✅ {user.name}님의 {etf.symbol} ETF 처리 완료")
             
         except Exception as e:
-            logger.error(f"❌ 알림 생성 중 오류: {e}")
-            return None
+            logger.error(f"❌ {user_setting.user_id} 사용자 투자 처리 중 오류: {e}")
 
 # 전역 스케줄러 인스턴스
-notification_scheduler = NotificationScheduler()
+scheduler = NotificationScheduler()
 
 def start_notification_scheduler():
     """알림 스케줄러 시작"""
-    notification_scheduler.start()
+    scheduler.start()
 
 def stop_notification_scheduler():
     """알림 스케줄러 중지"""
-    notification_scheduler.stop() 
+    scheduler.stop() 

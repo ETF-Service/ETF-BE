@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from schemas.user import UserCreate, UserLogin
+from schemas.notification import NotificationSettings, NotificationSettingsUpdate
+from schemas.etf import InvestmentSettingsUpdate
 from crud.user import get_user_by_userId, create_user, get_user_by_email, check_user_exists
+from crud.etf import update_investment_settings, get_investment_settings_by_user_id
 from utils.security import verify_password
 from utils.auth import create_access_token, get_current_user
 import logging
@@ -163,4 +166,93 @@ def delete_current_user(current_user: str = Depends(get_current_user), db: Sessi
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="계정 삭제 중 오류가 발생했습니다."
+        )
+
+@router.get("/users/me/notification-settings")
+def get_notification_settings(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    """사용자 알림 설정 조회"""
+    try:
+        db_user = get_user_by_userId(db, current_user)
+        if not db_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+        
+        # 투자 설정에서 알림 설정 조회
+        settings = get_investment_settings_by_user_id(db, db_user.id)
+        if not settings:
+            # 기본 설정 반환
+            return NotificationSettings(
+                notification_enabled=True,
+                notification_channels="app,email"
+            )
+        
+        return NotificationSettings(
+            notification_enabled=settings.notification_enabled,
+            notification_channels=settings.notification_channels
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"알림 설정 조회 실패: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="알림 설정 조회 중 오류가 발생했습니다."
+        )
+
+@router.put("/users/me/notification-settings")
+def update_notification_settings(
+    settings: NotificationSettingsUpdate,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """사용자 알림 설정 업데이트"""
+    try:
+        db_user = get_user_by_userId(db, current_user)
+        if not db_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+        
+        # 기존 설정 조회
+        current_settings = get_investment_settings_by_user_id(db, db_user.id)
+        if not current_settings:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="투자 설정을 찾을 수 없습니다."
+            )
+        
+        investment_settings = InvestmentSettingsUpdate(
+            notification_enabled=settings.notification_enabled,
+            notification_channels=settings.notification_channels
+        )
+        
+        # 설정 업데이트
+        success = update_investment_settings(db, current_settings.id, investment_settings)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="알림 설정 업데이트에 실패했습니다."
+            )
+        
+        # 트랜잭션 커밋
+        db.commit()
+        
+        logger.info(f"알림 설정 업데이트: {current_user} - {investment_settings}")
+        
+        return {"message": "알림 설정이 성공적으로 업데이트되었습니다."}
+        
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"알림 설정 업데이트 실패: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="알림 설정 업데이트 중 오류가 발생했습니다."
         )
