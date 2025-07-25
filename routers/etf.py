@@ -218,7 +218,7 @@ def put_my_etf_investment_settings(
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """내 ETF별 투자 설정 일괄 저장/수정 (전체 교체)"""
+    """내 ETF별 투자 설정 스마트 업데이트 (기존 설정 보존 + 변경사항만 업데이트)"""
     try:
         user = get_user_by_userId(db, current_user)
         if not user:
@@ -226,8 +226,10 @@ def put_my_etf_investment_settings(
         settings = get_investment_settings_by_user_id(db, user.id)
         if not settings:
             raise HTTPException(status_code=404, detail="투자 설정을 찾을 수 없습니다.")
+        
         etf_settings = upsert_etf_investment_settings(db, settings.id, req.etf_settings)
         db.commit()
+        
         return ETFInvestmentSettingsResponse(etf_settings=etf_settings)
     except HTTPException:
         db.rollback()

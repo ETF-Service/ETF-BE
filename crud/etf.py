@@ -76,34 +76,42 @@ def delete_investment_etf_settings_by_setting_id(db: Session, setting_id: int) -
         raise Exception(f"ETF 삭제 실패: {str(e)}")
 
 def update_investment_etf_settings(db: Session, setting_id: int, settings: InvestmentSettingsUpdate) -> List[ETF]:
-    """사용자 ETF 업데이트 (기본 투자 설정 포함)"""
+    """사용자 ETF 업데이트 (스마트 업데이트 - 기존 설정 보존)"""
     try:
         if not settings.etf_symbols:
             return get_etfs_by_setting_id(db, setting_id)
         
-        # 기존 ETF 삭제
-        delete_investment_etf_settings_by_setting_id(db, setting_id)	
+        # 기존 ETF 설정 조회
+        existing_settings = db.query(InvestmentETFSettings).filter(
+            InvestmentETFSettings.setting_id == setting_id
+        ).all()
         
-        # 새로운 ETF 추가 (기본 투자 설정으로)
-        invalid_symbols = []
+        # 기존 설정을 심볼별로 매핑
+        existing_map = {}
+        for setting in existing_settings:
+            etf = get_etf_by_id(db, setting.etf_id)
+            if etf:
+                existing_map[etf.symbol] = setting
+        
+        # 새로 추가할 ETF들
         for etf_symbol in settings.etf_symbols:
-            etf = get_etf_by_symbol(db, etf_symbol)
-            if not etf:
-                invalid_symbols.append(etf_symbol)
-                continue
-            # 기본 투자 설정으로 ETF 생성
-            create_user_etf(
-                db, 
-                setting_id, 
-                etf.id,
-                cycle="monthly",    # 기본값: 월간
-                day=1,              # 기본값: 1일
-                amount=10.0         # 기본값: 10만원
-            )
+            if etf_symbol not in existing_map:
+                etf = get_etf_by_symbol(db, etf_symbol)
+                if etf:
+                    # 기본 투자 설정으로 ETF 생성
+                    create_user_etf(
+                        db, 
+                        setting_id, 
+                        etf.id,
+                        cycle="monthly",    # 기본값: 월간
+                        day=1,              # 기본값: 1일
+                        amount=10.0         # 기본값: 10만원
+                    )
         
-        # 유효하지 않은 심볼이 있으면 경고 (하지만 전체 트랜잭션은 성공)
-        if invalid_symbols:
-            print(f"경고: 유효하지 않은 ETF 심볼들: {invalid_symbols}")
+        # 새 설정에 없는 기존 ETF는 삭제 (선택 해제된 경우)
+        for symbol, existing_setting in existing_map.items():
+            if symbol not in settings.etf_symbols:
+                db.delete(existing_setting)
         
         return get_etfs_by_setting_id(db, setting_id)
     except SQLAlchemyError as e:
@@ -233,24 +241,50 @@ def get_etf_investment_setting(db: Session, setting_id: int, etf_symbol: str):
         raise Exception(f"ETF별 투자 설정 단건 조회 실패: {str(e)}")
 
 def upsert_etf_investment_settings(db: Session, setting_id: int, etf_settings: list[ETFInvestmentSettingBase]):
-    """ETF별 투자 설정 일괄 저장/수정 (전체 교체)"""
+    """ETF별 투자 설정 일괄 저장/수정 (스마트 업데이트)"""
     try:
-        # 기존 데이터 삭제
-        db.query(InvestmentETFSettings).filter(InvestmentETFSettings.setting_id == setting_id).delete()
-        db.flush()
-        # 새 데이터 추가
+        # 기존 설정 조회
+        existing_settings = db.query(InvestmentETFSettings).filter(
+            InvestmentETFSettings.setting_id == setting_id
+        ).all()
+        
+        # 기존 설정을 심볼별로 매핑
+        existing_map = {}
+        for setting in existing_settings:
+            etf = get_etf_by_id(db, setting.etf_id)
+            if etf:
+                existing_map[etf.symbol] = setting
+        
+        # 새 설정을 심볼별로 매핑
+        new_settings_map = {}
         for setting in etf_settings:
-            etf = get_etf_by_symbol(db, setting.symbol)
-            if not etf:
-                continue
-            db_etf = InvestmentETFSettings(
-                setting_id=setting_id,
-                etf_id=etf.id,
-                cycle=setting.cycle,
-                day=setting.day,
-                amount=setting.amount
-            )
-            db.add(db_etf)
+            new_settings_map[setting.symbol] = setting
+        
+        # 1. 새로 추가된 ETF 설정 생성
+        for symbol, new_setting in new_settings_map.items():
+            if symbol not in existing_map:
+                etf = get_etf_by_symbol(db, symbol)
+                if etf:
+                    db_etf = InvestmentETFSettings(
+                        setting_id=setting_id,
+                        etf_id=etf.id,
+                        cycle=new_setting.cycle,
+                        day=new_setting.day,
+                        amount=new_setting.amount
+                    )
+                    db.add(db_etf)
+        
+        # 2. 기존 ETF 설정 업데이트
+        for symbol, existing_setting in existing_map.items():
+            if symbol in new_settings_map:
+                new_setting = new_settings_map[symbol]
+                existing_setting.cycle = new_setting.cycle
+                existing_setting.day = new_setting.day
+                existing_setting.amount = new_setting.amount
+            # 3. 새 설정에 없는 기존 ETF는 삭제
+            else:
+                db.delete(existing_setting)
+        
         db.flush()
         return get_etf_investment_settings(db, setting_id)
     except SQLAlchemyError as e:
