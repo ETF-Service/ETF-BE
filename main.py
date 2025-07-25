@@ -4,6 +4,11 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
+
 from routers import user as user_router
 from routers import etf as etf_router
 from routers import chat as chat_router

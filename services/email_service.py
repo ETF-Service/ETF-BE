@@ -1,9 +1,9 @@
 import os
 import logging
 from typing import Dict, Any, Optional
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Email, To, Content, HtmlContent
 from datetime import datetime
+import requests
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +18,7 @@ class EmailService:
             self.enabled = False
         else:
             self.enabled = True
-            try:
-                self.sg = SendGridAPIClient(api_key=self.sendgrid_api_key)
-                logger.info("SendGrid 클라이언트 초기화 완료")
-            except Exception as e:
-                logger.error(f"SendGrid 클라이언트 초기화 실패: {e}")
-                self.enabled = False
+            logger.info("이메일 서비스 초기화 완료")
 
     def send_ai_analysis_notification(self, user_email: str, user_name: str, data: Dict[str, Any]) -> bool:
         """AI 분석 결과 알림 이메일 전송"""
@@ -33,10 +28,9 @@ class EmailService:
 
         try:
             subject = f"[ETF앱] {data.get('etf_symbol', 'ETF')} 투자 분석 알림"
-            
             html_content = self._create_ai_analysis_email_template(user_name, data)
             
-            return self._send_email(user_email, subject, html_content)
+            return self._send_email_direct(user_email, subject, html_content)
             
         except Exception as e:
             logger.error(f"AI 분석 알림 이메일 전송 실패: {e}")
@@ -50,10 +44,9 @@ class EmailService:
 
         try:
             subject = "[ETF앱] 오늘은 투자일입니다!"
-            
             html_content = self._create_investment_reminder_template(user_name, data)
             
-            return self._send_email(user_email, subject, html_content)
+            return self._send_email_direct(user_email, subject, html_content)
             
         except Exception as e:
             logger.error(f"투자일 알림 이메일 전송 실패: {e}")
@@ -68,27 +61,56 @@ class EmailService:
         try:
             html_content = self._create_system_notification_template(user_name, title, content)
             
-            return self._send_email(user_email, title, html_content)
+            return self._send_email_direct(user_email, title, html_content)
             
         except Exception as e:
             logger.error(f"시스템 알림 이메일 전송 실패: {e}")
             return False
 
-    def _send_email(self, to_email: str, subject: str, html_content: str) -> bool:
-        """이메일 전송 공통 메서드"""
+    def _send_email_direct(self, to_email: str, subject: str, html_content: str) -> bool:
+        """SendGrid API를 직접 호출하여 이메일 전송"""
         try:
-            from_email = Email(self.from_email, self.from_name)
-            to_email = To(to_email)
-            content = HtmlContent(html_content)
-            mail = Mail(from_email, to_email, subject, content)
+            email_data = {
+                "personalizations": [
+                    {
+                        "to": [
+                            {
+                                "email": to_email,
+                                "name": "사용자"
+                            }
+                        ],
+                        "subject": subject
+                    }
+                ],
+                "from": {
+                    "email": self.from_email,
+                    "name": self.from_name
+                },
+                "content": [
+                    {
+                        "type": "text/html",
+                        "value": html_content
+                    }
+                ]
+            }
             
-            response = self.sg.send(mail)
+            headers = {
+                'Authorization': f'Bearer {self.sendgrid_api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            response = requests.post(
+                'https://api.sendgrid.com/v3/mail/send',
+                headers=headers,
+                json=email_data,
+                verify=False  # SSL 검증 비활성화
+            )
             
             if response.status_code in [200, 201, 202]:
                 logger.info(f"이메일 전송 성공: {to_email} - {subject}")
                 return True
             else:
-                logger.error(f"이메일 전송 실패: {response.status_code} - {response.body}")
+                logger.error(f"이메일 전송 실패: {response.status_code} - {response.text}")
                 return False
                 
         except Exception as e:
@@ -175,13 +197,22 @@ class EmailService:
 
     def _create_investment_reminder_template(self, user_name: str, data: Dict[str, Any]) -> str:
         """투자일 알림 이메일 템플릿"""
-        etf_list = data.get('etf_list', [])
+        etf_list = data.get('etf_list', '')
         total_amount = data.get('total_amount', 0)
-        etf_count = len(etf_list)
         
-        etf_html = ""
-        for etf in etf_list:
-            etf_html += f"<li>• {etf.get('name', 'ETF')}: {etf.get('amount', 0):,}원</li>"
+        # etf_list가 문자열인 경우 처리
+        if isinstance(etf_list, str):
+            etf_items = [item.strip() for item in etf_list.split(',')]
+            etf_count = len(etf_items)
+            etf_html = ""
+            for etf in etf_items:
+                etf_html += f"<li>• {etf}</li>"
+        else:
+            # etf_list가 리스트인 경우 (기존 로직)
+            etf_count = len(etf_list)
+            etf_html = ""
+            for etf in etf_list:
+                etf_html += f"<li>• {etf.get('name', 'ETF')}: {etf.get('amount', 0):,}원</li>"
         
         return f"""
         <!DOCTYPE html>
