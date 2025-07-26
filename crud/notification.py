@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from models.notification import Notification
-from models.user import InvestmentSettings
+from models import Notification, InvestmentSettings
 from schemas.notification import NotificationCreate, NotificationUpdate, NotificationSettingsUpdate
 from datetime import datetime
 from typing import List, Optional
@@ -33,6 +32,25 @@ def get_notification_by_id(db: Session, notification_id: int) -> Optional[Notifi
     """ID로 알림 조회"""
     return db.query(Notification).filter(Notification.id == notification_id).first()
 
+def get_notification_by_user_id_and_type(db: Session, user_id: int, type: str) -> Optional[Notification]:
+    """사용자 ID와 타입으로 알림 조회"""
+    return db.query(Notification).filter(
+        Notification.user_id == user_id,
+        Notification.type == type
+    ).first()
+
+def get_user_notifications_by_type(
+    db: Session, 
+    user_id: int, 
+    notification_type: str, 
+    limit: int = 1
+) -> List[Notification]:
+    """사용자 ID와 알림 타입으로 알림 목록 조회 (최신순)"""
+    return db.query(Notification).filter(
+        Notification.user_id == user_id,
+        Notification.type == notification_type
+    ).order_by(Notification.created_at.desc()).limit(limit).all()
+
 def update_notification(
     db: Session, 
     notification_id: int, 
@@ -56,46 +74,6 @@ def update_notification(
     db.refresh(db_notification)
     return db_notification
 
-def mark_notification_as_read(db: Session, notification_id: int) -> Optional[Notification]:
-    """알림을 읽음으로 표시"""
-    return update_notification(
-        db, 
-        notification_id, 
-        NotificationUpdate(is_read=True)
-    )
-
-def mark_all_notifications_as_read(db: Session, user_id: int) -> int:
-    """사용자의 모든 알림을 읽음으로 표시"""
-    result = db.query(Notification).filter(
-        and_(
-            Notification.user_id == user_id,
-            Notification.is_read == False
-        )
-    ).update({
-        'is_read': True,
-        'read_at': datetime.utcnow()
-    })
-    db.commit()
-    return result
-
-def delete_notification(db: Session, notification_id: int) -> bool:
-    """알림 삭제"""
-    db_notification = get_notification_by_id(db, notification_id)
-    if not db_notification:
-        return False
-    
-    db.delete(db_notification)
-    db.commit()
-    return True
-
-def get_unread_notification_count(db: Session, user_id: int) -> int:
-    """사용자의 읽지 않은 알림 개수"""
-    return db.query(Notification).filter(
-        and_(
-            Notification.user_id == user_id,
-            Notification.is_read == False
-        )
-    ).count()
 
 def get_notification_settings(db: Session, user_id: int) -> Optional[InvestmentSettings]:
     """사용자의 알림 설정 조회"""

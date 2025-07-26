@@ -9,9 +9,9 @@ from typing import Dict, Optional
 from datetime import datetime
 import json
 
-from config.notification_config import get_ai_analysis_threshold
-from models.user import InvestmentSettings, User
-from models.etf import InvestmentETFSettings, ETF
+from config.notification_config import get_ai_analysis_threshold, NOTIFICATION_TYPES
+from models import User, InvestmentSettings
+from crud.notification import get_user_notifications_by_type
 
 logger = logging.getLogger(__name__)
 
@@ -22,115 +22,59 @@ AI_SERVICE_URL = os.getenv("ETF_AI_SERVICE_URL", "http://localhost:8001")
 MAX_RETRIES = int(os.getenv("AI_SERVICE_MAX_RETRIES", "3"))
 RETRY_DELAY = int(os.getenv("AI_SERVICE_RETRY_DELAY", "5"))
 
-async def analyze_investment_decision(
+def create_integrated_analysis_messages(
     user: User,
     user_setting: InvestmentSettings,
-    etf_setting: InvestmentETFSettings,
-    etf: ETF,
-    previous_analysis: str = None
-) -> Optional[Dict]:
-    """
-    AI 분석을 통한 투자 결정 분석
+    etf_data_list: list
+) -> list:
+    """사용자의 모든 ETF를 포함한 통합 분석 메시지 생성"""
     
-    Args:
-        user: 사용자 정보
-        user_setting: 사용자 투자 설정
-        etf_setting: ETF 투자 설정
-        etf: ETF 정보
-        previous_analysis: 이전 분석 결과 (선택사항)
-    
-    Returns:
-        분석 결과 딕셔너리 또는 None
-    """
     try:
-        logger.info(f"🤖 {user.name}님의 {etf.symbol} ETF AI 분석 시작...")
+        # 사용자 정보
+        user_name = user.name
+        invest_type = user_setting.risk_level
+        interest = user_setting.persona or "ETF 투자"
         
-        # AI 분석 요청 메시지 구성
-        analysis_messages = create_analysis_messages(
-            user, user_setting, etf_setting, etf
-        )
+        # ETF 정보 요약 생성
+        etf_summary = []
         
-        # ETF_AI 서비스에 분석 요청
-        analysis_result = await request_ai_analysis(
-            analysis_messages, 
-            user_setting.api_key, 
-            user_setting.model_type
-        )
+        for etf_data in etf_data_list:
+            etf_setting = etf_data['etf_setting']
+            etf = etf_data['etf']
+            
+            etf_summary.append(f"{etf.symbol}: {etf.name} - {etf_setting.amount:,}만원")
         
-        if not analysis_result:
-            logger.warning(f"⚠️ AI 분석 결과가 없습니다: {etf.symbol}")
-            return None
+        # 오늘 날짜 정보
+        today_date = f"{datetime.now().year}년 {datetime.now().month}월 {datetime.now().day}일"
+        today_etfs = ", ".join([f"{etf_data['etf'].symbol}" for etf_data in etf_data_list])
+        today_etfs_invest_price = ", ".join([f"{etf_data['etf_setting'].amount:,}만원" for etf_data in etf_data_list])
         
-        logger.info(f"📊 {user.name}님의 {etf.symbol} ETF AI 분석 완료")
+        # analyze_instructions 스타일로 developer 메시지 생성
+        developer_content = f"너의 이름은 금융 Agent야. 사용자를 '{user_name} 고객님'이라고 불러야 해.\
+        너가 해야하는 업무는 사용자의 성향과 최근 뉴스 및 한국 은행에서 제공하는 해외 동향분석, 현지정보 자료를 기반으로 포트폴리오 전체를 분석해서 '{user_name} 고객님, 오늘 투자할 ETF 포트폴리오의 전망이 이러니 각 상품별로 투자 비중을 조정하는게 좋겠다.'라고 말해줘야해.\
+        오늘 날짜는 {today_date}야.\
+        사용자의 투자 성향은 0(보수적) ~ 10(공격적)이라고 할 때, {invest_type}이야.\
+        사용자가 오늘 투자할 ETF 포트폴리오 정보는 {', '.join(etf_summary)}야."
         
-        # 분석 결과에서 투자 변경 필요성 판단 (이전 분석과 비교)
-        should_notify = determine_notification_need(analysis_result, previous_analysis)
+        messages = [
+            {
+                "role": "developer",
+                "content": developer_content
+            },
+            {
+                "role": "user",
+                "content": f"네이버 글로벌 경제 뉴스, 네이버 한국 경제 뉴스, 한국은행에서 제공하는 정보 3가지를 모두 분석해줘.\
+                            오늘 나는 {today_etfs} ETF 포트폴리오에 각각 {today_etfs_invest_price}씩을 투자하는 날이야.\
+                            각 ETF별로 현재 시장 상황을 분석하고, 투자 비율 조정이 필요한 상품이 있는지 판단해줘.\
+                            요약만 간결하게 해서 각 상품별 투자 비율을 조정해서 최종 투자 금액을 도출해줘."
+            }
+        ]
         
-        # 추천사항 및 신뢰도 추출
-        recommendation = extract_recommendation(analysis_result)
-        confidence_score = extract_confidence_score(analysis_result)
-        
-        result = {
-            'should_notify': should_notify,
-            'analysis_result': analysis_result,
-            'recommendation': recommendation,
-            'confidence_score': confidence_score,
-            'analyzed_at': datetime.now().isoformat(),
-            'etf_symbol': etf.symbol,
-            'user_id': user.id
-        }
-        
-        logger.info(f"✅ {user.name}님의 {etf.symbol} ETF 분석 결과: 알림 전송 {'예정' if should_notify else '불필요'}")
-        
-        return result
+        return messages
         
     except Exception as e:
-        logger.error(f"❌ {user.name}님의 {etf.symbol} ETF AI 분석 중 오류 발생: {e}")
-        return None
-
-def create_analysis_messages(
-    user: User,
-    user_setting: InvestmentSettings,
-    etf_setting: InvestmentETFSettings,
-    etf: ETF
-) -> list:
-    """AI 분석 요청 메시지 생성 - analyze_instructions 함수 사용"""
-    
-    # 사용자 정보
-    user_name = user.name
-    invest_type = user_setting.risk_level
-    interest = user_setting.persona or "ETF 투자"
-    invest_price = etf_setting.amount
-    invest_infos = f"{etf.symbol}: {etf.name}"
-    
-    # 오늘 날짜 정보
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_ETF = etf.symbol
-    today_ETF_invest_price = etf_setting.amount
-    
-    # analyze_instructions 스타일로 developer 메시지 생성
-    today_date = f"{datetime.now().year}년 {datetime.now().month}월 {datetime.now().day}일"
-    
-    developer_content = f"너의 이름은 금융 Agent야. 사용자를 '{user_name} 고객님'이라고 불러야 해.\
-    너가 해야하는 업무는 사용자의 성향과 최근 뉴스 및 한국 은행에서 제공하는 해외 동향분석, 현지정보 자료를 기반으로 상품마다 투자하기 전에 '{user_name} 고객님, OOO상품을 곧 투자할 예정인데 이 상품의 앞으로의 전망이 이러니 투자 비중을 기존보다 10% 인상하는게 좋겠다.'라고 말해줘야해.\
-    오늘 날짜는 {today_date}야.\
-    사용자의 투자 성향은 0(보수적) ~ 10(공격적)이라고 할 때, {invest_type}이야.\
-    사용자가 현재 투자하고 있는 ETF 및 그에 대한 정보는 {invest_infos}야."
-    
-    messages = [
-        {
-            "role": "developer",
-            "content": developer_content
-        },
-        {
-            "role": "user",
-            "content": f"네이버 글로벌 경제 뉴스, 네이버 한국 경제 뉴스, 한국은행에서 제공하는 정보 3가지를 모두 분석해줘.\
-                        오늘 나는 {today_ETF} ETF에 각각 {today_ETF_invest_price}만원씩 투자하는 날이야. 이중에서 투자 비율을 조정해야 하는 것이 있어?\
-                        요약만 간결하게 해서 상품에 투자 비중을 정해서 최종 금액을 도출해줘."
-        }
-    ]
-    
-    return messages
+        logger.error(f"❌ 통합 분석 메시지 생성 중 오류: {e}")
+        return []
 
 async def request_ai_analysis(
     messages: list, 
@@ -402,9 +346,6 @@ def get_previous_analysis(user_id: int, etf_symbol: str, db) -> Optional[str]:
         이전 분석 결과 또는 None
     """
     try:
-        from crud.notification import get_user_notifications_by_type
-        from config.notification_config import NOTIFICATION_TYPES
-        
         # 최근 AI 분석 알림 조회
         notifications = get_user_notifications_by_type(
             db, user_id, NOTIFICATION_TYPES['AI_ANALYSIS'], limit=1

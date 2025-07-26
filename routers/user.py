@@ -185,12 +185,10 @@ def get_notification_settings(current_user: str = Depends(get_current_user), db:
             # 기본 설정 반환
             return NotificationSettings(
                 notification_enabled=True,
-                notification_channels="app,email"
             )
         
         return NotificationSettings(
             notification_enabled=settings.notification_enabled,
-            notification_channels=settings.notification_channels
         )
         
     except HTTPException:
@@ -227,7 +225,6 @@ def update_notification_settings(
         
         investment_settings = InvestmentSettingsUpdate(
             notification_enabled=settings.notification_enabled,
-            notification_channels=settings.notification_channels
         )
         
         # 설정 업데이트

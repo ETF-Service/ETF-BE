@@ -28,7 +28,6 @@ class InvestmentSettings(Base):
     persona = Column(String, nullable=True)
     # 알림 설정 필드 추가
     notification_enabled = Column(Boolean, default=True)
-    notification_channels = Column(String(100), default='app')  # 'app,email,sms'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

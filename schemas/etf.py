@@ -86,7 +86,6 @@ class InvestmentSettingsUpdate(BaseModel):
     persona: Optional[str] = None
     etf_symbols: Optional[List[str]] = None
     notification_enabled: Optional[bool] = None
-    notification_channels: Optional[str] = None
 
 class InvestmentSettings(InvestmentSettingsBase):
     id: int

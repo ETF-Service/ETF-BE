@@ -12,9 +12,11 @@ load_dotenv()
 from routers import user as user_router
 from routers import etf as etf_router
 from routers import chat as chat_router
-from routers import notification as notification_router
 from database import engine, Base
 from crud.etf import create_initial_etfs, get_all_etfs
+
+# 모델들을 명시적으로 import하여 순환 참조 문제 해결
+import models
 
 # 로그 디렉토리 생성
 def setup_logging():
@@ -111,4 +113,3 @@ app.add_middleware(
 app.include_router(user_router.router)
 app.include_router(etf_router.router)
 app.include_router(chat_router.router)
-app.include_router(notification_router.router) 

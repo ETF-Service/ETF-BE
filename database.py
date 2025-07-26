@@ -10,6 +10,9 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+# 모델들을 import하여 SQLAlchemy가 테이블을 인식하도록 함
+import models
+
 def get_db():
     db = SessionLocal()
     try:

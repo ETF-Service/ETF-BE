@@ -17,7 +17,7 @@ from database import SessionLocal
 from crud.notification import get_users_with_notifications_enabled
 from crud.etf import get_investment_etf_settings_by_user_id, get_etf_by_id
 from crud.user import get_user_by_id
-from services.ai_service import analyze_investment_decision, request_batch_ai_analysis
+from services.ai_service import request_batch_ai_analysis, create_integrated_analysis_messages
 from services.notification_service import notification_service
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class NotificationScheduler:
             db.close()
     
     def get_users_with_investment_today(self, db: Session) -> List:
-        """오늘 투자일인 사용자 조회"""
+        """오늘 투자일인 사용자 조회 (한 사용자의 모든 투자일 ETF 포함)"""
         today = datetime.now()
         today_weekday = today.weekday()  # 0=월요일, 6=일요일 (Python datetime.weekday() 기준)
         today_day = today.day  # 1-31
@@ -97,62 +97,74 @@ class NotificationScheduler:
             # 해당 사용자의 ETF 투자 설정 조회
             etf_settings = get_investment_etf_settings_by_user_id(db, user_setting.user_id)
             
+            # 오늘 투자일인 모든 ETF 설정 수집
+            today_etf_settings = []
             for etf_setting in etf_settings:
                 if self.is_investment_day(etf_setting, today_weekday, today_day):
-                    today_investors.append({
-                        'user_setting': user_setting,
-                        'etf_setting': etf_setting
-                    })
-                    break  # 한 사용자당 하나의 투자일만 처리
+                    today_etf_settings.append(etf_setting)
+            
+            # 오늘 투자일인 ETF가 있는 경우에만 추가
+            if today_etf_settings:
+                today_investors.append({
+                    'user_setting': user_setting,
+                    'etf_settings': today_etf_settings  # 모든 ETF 설정을 포함
+                })
         
         return today_investors
     
     async def process_users_in_parallel(self, db: Session, today_users: List):
-        """사용자들을 병렬로 처리 (배치 AI 분석 사용)"""
-        logger.info(f"🔄 배치 AI 분석을 통한 병렬 처리 시작: {len(today_users)}개 사용자")
+        """사용자들을 병렬로 처리 (한 사용자의 모든 ETF를 한 번에 분석)"""
+        logger.info(f"🔄 사용자별 통합 AI 분석 시작: {len(today_users)}개 사용자")
         
-        # AI 분석 요청 데이터 준비
+        # 사용자별 통합 분석 요청 데이터 준비
         analysis_requests = []
         user_data_map = {}  # 요청과 사용자 데이터 매핑
         
-        for user_setting in today_users:
+        for user_data in today_users:
             try:
                 # 사용자 정보 조회
-                user = get_user_by_id(db, user_setting['user_setting'].user_id)
+                user = get_user_by_id(db, user_data['user_setting'].user_id)
                 if not user:
-                    logger.warning(f"⚠️ 사용자 {user_setting['user_setting'].user_id}를 찾을 수 없습니다")
+                    logger.warning(f"⚠️ 사용자 {user_data['user_setting'].user_id}를 찾을 수 없습니다")
                     continue
                 
-                # ETF 정보 조회
-                etf = get_etf_by_id(db, user_setting['etf_setting'].etf_id)
-                if not etf:
-                    logger.warning(f"⚠️ ETF {user_setting['etf_setting'].etf_id}를 찾을 수 없습니다")
+                # 해당 사용자의 모든 ETF 정보 조회
+                etf_data_list = []
+                for etf_setting in user_data['etf_settings']:
+                    etf = get_etf_by_id(db, etf_setting.etf_id)
+                    if not etf:
+                        logger.warning(f"⚠️ ETF {etf_setting.etf_id}를 찾을 수 없습니다")
+                        continue
+                    etf_data_list.append({
+                        'etf_setting': etf_setting,
+                        'etf': etf
+                    })
+                
+                if not etf_data_list:
+                    logger.warning(f"⚠️ {user.name}님의 유효한 ETF가 없습니다")
                     continue
                 
-                # AI 분석 메시지 생성
-                from services.ai_service import create_analysis_messages
-                analysis_messages = create_analysis_messages(
-                    user, 
-                    user_setting['user_setting'], 
-                    user_setting['etf_setting'], 
-                    etf
+                # 사용자의 모든 ETF를 포함한 통합 분석 메시지 생성
+                analysis_messages = create_integrated_analysis_messages(
+                    user, user_data['user_setting'], etf_data_list
                 )
                 
                 # 배치 요청에 추가
                 request_id = len(analysis_requests)
                 analysis_requests.append({
                     "messages": analysis_messages,
-                    "api_key": user_setting['user_setting'].api_key,
-                    "model_type": user_setting['user_setting'].model_type
+                    "api_key": user_data['user_setting'].api_key,
+                    "model_type": user_data['user_setting'].model_type
                 })
                 
                 # 사용자 데이터 매핑
                 user_data_map[request_id] = {
                     "user": user,
-                    "user_setting": user_setting['user_setting'],
-                    "etf_setting": user_setting['etf_setting'],
-                    "etf": etf
+                    "user_setting": user_data['user_setting'],
+                    "etf_data_list": etf_data_list
                 }
+                
+                logger.info(f"📊 {user.name}님의 {len(etf_data_list)}개 ETF 통합 분석 준비 완료")
                 
             except Exception as e:
                 logger.error(f"❌ 사용자 데이터 준비 중 오류: {e}")
@@ -171,41 +183,41 @@ class NotificationScheduler:
             if i in user_data_map:
                 try:
                     user_data = user_data_map[i]
-                    result = await self.process_analysis_result(
+                    result = await self.process_integrated_analysis_result(
                         db, user_data, analysis_result
                     )
                     results.append(result)
                 except Exception as e:
-                    logger.error(f"❌ 분석 결과 처리 중 오류: {e}")
+                    logger.error(f"❌ 통합 분석 결과 처리 중 오류: {e}")
                     results.append(None)
         
         success_count = sum(1 for result in results if result is not None)
-        logger.info(f"✅ 배치 AI 분석 완료: 성공 {success_count}개, 실패 {len(results) - success_count}개")
+        logger.info(f"✅ 사용자별 통합 AI 분석 완료: 성공 {success_count}개, 실패 {len(results) - success_count}개")
         
         return results
     
-    async def process_analysis_result(self, db: Session, user_data: dict, analysis_result: str):
-        """AI 분석 결과 처리 및 알림 생성"""
+    async def process_integrated_analysis_result(self, db: Session, user_data: dict, analysis_result: str):
+        """통합 AI 분석 결과 처리 및 알림 생성"""
         try:
             user = user_data["user"]
             user_setting = user_data["user_setting"]
-            etf_setting = user_data["etf_setting"]
-            etf = user_data["etf"]
+            etf_data_list = user_data["etf_data_list"]
             
             if not analysis_result:
-                logger.warning(f"⚠️ {user.name}님의 {etf.symbol} ETF 분석 결과가 없습니다")
+                logger.warning(f"⚠️ {user.name}님의 통합 ETF 분석 결과가 없습니다")
                 return None
             
-            # 이전 분석 결과 조회
+            # 이전 분석 결과 조회 (포트폴리오 전체 기준)
             from services.ai_service import get_previous_analysis, save_analysis_result
-            previous_analysis = get_previous_analysis(user.id, etf.symbol, db)
+            portfolio_key = f"portfolio_{user.id}"
+            previous_analysis = get_previous_analysis(user.id, portfolio_key, db)
             
             # 알림 전송 여부 결정
             from services.ai_service import determine_notification_need, extract_recommendation, extract_confidence_score
             should_notify = determine_notification_need(analysis_result, previous_analysis)
             
             # 분석 결과 저장
-            save_analysis_result(user.id, etf.symbol, analysis_result, db)
+            save_analysis_result(user.id, portfolio_key, analysis_result, db)
             
             # 추천사항 및 신뢰도 추출
             recommendation = extract_recommendation(analysis_result)
@@ -213,16 +225,16 @@ class NotificationScheduler:
             
             # 알림 전송
             if should_notify:
-                await self.send_investment_notification(
-                    user, user_setting, etf_setting, etf, 
+                await self.send_integrated_investment_notification(
+                    user, user_setting, etf_data_list, 
                     analysis_result, recommendation, confidence_score
                 )
             
-            logger.info(f"✅ {user.name}님의 {etf.symbol} ETF 분석 완료: 알림 {'전송' if should_notify else '불필요'}")
+            logger.info(f"✅ {user.name}님의 {len(etf_data_list)}개 ETF 통합 분석 완료: 알림 {'전송' if should_notify else '불필요'}")
             
             return {
                 'user_id': user.id,
-                'etf_symbol': etf.symbol,
+                'etf_count': len(etf_data_list),
                 'should_notify': should_notify,
                 'analysis_result': analysis_result,
                 'recommendation': recommendation,
@@ -230,43 +242,56 @@ class NotificationScheduler:
             }
             
         except Exception as e:
-            logger.error(f"❌ 분석 결과 처리 중 오류: {e}")
+            logger.error(f"❌ 통합 분석 결과 처리 중 오류: {e}")
             return None
     
-    async def send_investment_notification(
-        self, user, user_setting, etf_setting, etf, 
+    async def send_integrated_investment_notification(
+        self, user, user_setting, etf_data_list, 
         analysis_result, recommendation, confidence_score
     ):
-        """투자 알림 전송"""
+        """통합 투자 알림 전송"""
         try:
+            # ETF 목록 생성
+            etf_list = []
+            total_amount = 0
+            for etf_data in etf_data_list:
+                etf_setting = etf_data['etf_setting']
+                etf = etf_data['etf']
+                etf_list.append(f"• {etf.symbol} ({etf.name}): {etf_setting.amount:,}원")
+                total_amount += etf_setting.amount
+            
             # 알림 메시지 생성
             notification_message = f"""
-🤖 {user.name}님의 {etf.symbol} ETF 투자 분석 결과
+🤖 {user.name}님의 ETF 포트폴리오 투자 분석 결과
 
-📊 분석 결과:
+📊 오늘 투자일인 ETF:
+{chr(10).join(etf_list)}
+
+💰 총 투자 금액: {total_amount:,}원
+
+📈 분석 결과:
 {analysis_result}
 
-💡 추천사항:
+💡 종합 추천사항:
 {recommendation}
 
 🎯 신뢰도: {confidence_score:.1f}%
 
-📅 투자일: {etf_setting.cycle} (매 {etf_setting.day}일)
-💰 투자 금액: {etf_setting.amount:,}원
+📅 투자 주기: {user_setting.investment_cycle}
             """.strip()
             
             # 알림 전송
             await notification_service.send_notification(
                 user_id=user.id,
-                title=f"📈 {etf.symbol} ETF 투자 알림",
+                title=f"📈 ETF 포트폴리오 투자 알림 ({len(etf_data_list)}개 종목)",
                 message=notification_message,
-                notification_type="investment_analysis"
+                notification_type="portfolio_analysis"
             )
             
-            logger.info(f"📧 {user.name}님에게 {etf.symbol} ETF 투자 알림 전송 완료")
+            logger.info(f"📧 {user.name}님에게 {len(etf_data_list)}개 ETF 통합 투자 알림 전송 완료")
             
         except Exception as e:
-            logger.error(f"❌ 알림 전송 중 오류: {e}")
+            logger.error(f"❌ 통합 알림 전송 중 오류: {e}")
     
     async def record_metrics(self, user_count: int, processing_time: float):
         """성능 메트릭 기록"""
@@ -290,63 +315,7 @@ class NotificationScheduler:
             return today_day == etf_setting.day
         return False
     
-    async def process_user_investment(self, db: Session, investor_data: dict):
-        """사용자 투자 처리 (개선된 버전)"""
-        user_setting = investor_data['user_setting']
-        etf_setting = investor_data['etf_setting']
-        
-        start_time = time.time()
-        
-        try:
-            # 사용자 정보 조회
-            user = get_user_by_id(db, user_setting.user_id)
-            if not user:
-                logger.warning(f"⚠️ 사용자 {user_setting.user_id}를 찾을 수 없습니다")
-                return None
-            
-            # ETF 정보 조회
-            etf = get_etf_by_id(db, etf_setting.etf_id)
-            if not etf:
-                logger.warning(f"⚠️ ETF {etf_setting.etf_id}를 찾을 수 없습니다")
-                return None
-            
-            logger.info(f"🤖 {user.name}님의 {etf.symbol} ETF AI 분석 시작...")
-            
-            # AI 분석 수행 (타임아웃 설정)
-            try:
-                analysis_result = await asyncio.wait_for(
-                    analyze_investment_decision(user, user_setting, etf_setting, etf),
-                    timeout=30.0  # 30초 타임아웃
-                )
-            except asyncio.TimeoutError:
-                logger.error(f"⏰ {user.name}님의 AI 분석 타임아웃")
-                return None
-            
-            if not analysis_result:
-                logger.warning(f"⚠️ {user.name}님의 {etf.symbol} ETF AI 분석 실패")
-                return None
-            
-            # 알림 전송 (병렬로 처리)
-            notification_tasks = [
-                notification_service.send_ai_analysis_notification(
-                    db, user, etf, analysis_result, analysis_result['should_notify']
-                ),
-                notification_service.send_investment_reminder(
-                    db, user, [etf_setting]
-                )
-            ]
-            
-            await asyncio.gather(*notification_tasks)
-            
-            processing_time = time.time() - start_time
-            logger.info(f"✅ {user.name}님의 {etf.symbol} ETF 처리 완료 ({processing_time:.2f}초)")
-            
-            return True
-            
-        except Exception as e:
-            processing_time = time.time() - start_time
-            logger.error(f"❌ {user_setting.user_id} 사용자 투자 처리 중 오류 ({processing_time:.2f}초): {e}")
-            return None
+
 
 # 전역 스케줄러 인스턴스
 scheduler = NotificationScheduler()
