@@ -32,14 +32,7 @@ def get_notification_by_id(db: Session, notification_id: int) -> Optional[Notifi
     """ID로 알림 조회"""
     return db.query(Notification).filter(Notification.id == notification_id).first()
 
-def get_notification_by_user_id_and_type(db: Session, user_id: int, type: str) -> Optional[Notification]:
-    """사용자 ID와 타입으로 알림 조회"""
-    return db.query(Notification).filter(
-        Notification.user_id == user_id,
-        Notification.type == type
-    ).first()
-
-def get_user_notifications_by_type(
+def get_notifications_by_user_id_and_type(
     db: Session, 
     user_id: int, 
     notification_type: str, 

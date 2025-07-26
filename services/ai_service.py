@@ -11,7 +11,7 @@ import json
 
 from config.notification_config import get_ai_analysis_threshold, NOTIFICATION_TYPES
 from models import User, InvestmentSettings
-from crud.notification import get_user_notifications_by_type
+from crud.notification import get_notifications_by_user_id_and_type
 
 logger = logging.getLogger(__name__)
 
@@ -347,16 +347,13 @@ def get_previous_analysis(user_id: int, etf_symbol: str, db) -> Optional[str]:
     """
     try:
         # 최근 AI 분석 알림 조회
-        notifications = get_user_notifications_by_type(
+        notifications = get_notifications_by_user_id_and_type(
             db, user_id, NOTIFICATION_TYPES['AI_ANALYSIS'], limit=1
         )
         
         if notifications:
             # 알림 내용에서 분석 결과 추출
             content = notifications[0].content
-            # "추천사항:" 이후 부분이 분석 결과일 가능성이 높음
-            if "추천사항:" in content:
-                return content.split("추천사항:")[0].strip()
             return content
         
         return None
