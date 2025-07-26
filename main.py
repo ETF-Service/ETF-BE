@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 from datetime import datetime
 from dotenv import load_dotenv
@@ -36,7 +37,7 @@ def setup_logging():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             # 파일 핸들러 (로그 파일에 저장)
-            logging.FileHandler(log_file, encoding='utf-8'),
+            RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'),
             # 콘솔 핸들러 (터미널에도 출력)
             logging.StreamHandler()
         ]
