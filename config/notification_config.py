@@ -17,6 +17,7 @@ SCHEDULER_INTERVAL = int(os.getenv("SCHEDULER_INTERVAL", "3600"))
 NOTIFICATION_TYPES = {
     "INVESTMENT_REMINDER": "investment_reminder",
     "AI_ANALYSIS": "ai_analysis", 
+    "PORTFOLIO_ANALYSIS": "portfolio_analysis",
     "SYSTEM": "system"
 }
 
@@ -37,6 +38,7 @@ DEFAULT_NOTIFICATION_ENABLED = True
 NOTIFICATION_TITLES = {
     "investment_reminder": "투자일 알림",
     "ai_analysis": "AI 투자 분석 결과",
+    "portfolio_analysis": "포트폴리오 투자 분석 결과",
     "system": "시스템 알림"
 }
 

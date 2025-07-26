@@ -17,7 +17,13 @@ from database import SessionLocal
 from crud.notification import get_users_with_notifications_enabled
 from crud.etf import get_investment_etf_settings_by_user_id, get_etf_by_id
 from crud.user import get_user_by_id
-from services.ai_service import request_batch_ai_analysis, create_integrated_analysis_messages
+from services.ai_service import (
+    request_batch_ai_analysis, 
+    create_integrated_analysis_messages, 
+    get_previous_analysis, 
+    save_analysis_result, 
+    determine_notification_need, 
+    extract_recommendation, extract_confidence_score)
 from services.notification_service import notification_service
 
 logger = logging.getLogger(__name__)
@@ -208,12 +214,10 @@ class NotificationScheduler:
                 return None
             
             # 이전 분석 결과 조회 (포트폴리오 전체 기준)
-            from services.ai_service import get_previous_analysis, save_analysis_result
             portfolio_key = f"portfolio_{user.id}"
             previous_analysis = get_previous_analysis(user.id, portfolio_key, db)
             
             # 알림 전송 여부 결정
-            from services.ai_service import determine_notification_need, extract_recommendation, extract_confidence_score
             should_notify = determine_notification_need(analysis_result, previous_analysis)
             
             # 분석 결과 저장
@@ -225,10 +229,18 @@ class NotificationScheduler:
             
             # 알림 전송
             if should_notify:
-                await self.send_integrated_investment_notification(
-                    user, user_setting, etf_data_list, 
-                    analysis_result, recommendation, confidence_score
+                success = await notification_service.send_integrated_investment_notification(
+                    db=db,
+                    user=user,
+                    user_setting=user_setting,
+                    etf_data_list=etf_data_list,
+                    analysis_result=analysis_result,
+                    recommendation=recommendation,
+                    confidence_score=confidence_score
                 )
+                
+                if not success:
+                    logger.error(f"❌ {user.name}님의 통합 투자 알림 전송 실패")
             
             logger.info(f"✅ {user.name}님의 {len(etf_data_list)}개 ETF 통합 분석 완료: 알림 {'전송' if should_notify else '불필요'}")
             
@@ -244,54 +256,6 @@ class NotificationScheduler:
         except Exception as e:
             logger.error(f"❌ 통합 분석 결과 처리 중 오류: {e}")
             return None
-    
-    async def send_integrated_investment_notification(
-        self, user, user_setting, etf_data_list, 
-        analysis_result, recommendation, confidence_score
-    ):
-        """통합 투자 알림 전송"""
-        try:
-            # ETF 목록 생성
-            etf_list = []
-            total_amount = 0
-            for etf_data in etf_data_list:
-                etf_setting = etf_data['etf_setting']
-                etf = etf_data['etf']
-                etf_list.append(f"• {etf.symbol} ({etf.name}): {etf_setting.amount:,}원")
-                total_amount += etf_setting.amount
-            
-            # 알림 메시지 생성
-            notification_message = f"""
-🤖 {user.name}님의 ETF 포트폴리오 투자 분석 결과
-
-📊 오늘 투자일인 ETF:
-{chr(10).join(etf_list)}
-
-💰 총 투자 금액: {total_amount:,}원
-
-📈 분석 결과:
-{analysis_result}
-
-💡 종합 추천사항:
-{recommendation}
-
-🎯 신뢰도: {confidence_score:.1f}%
-
-📅 투자 주기: {user_setting.investment_cycle}
-            """.strip()
-            
-            # 알림 전송
-            await notification_service.send_notification(
-                user_id=user.id,
-                title=f"📈 ETF 포트폴리오 투자 알림 ({len(etf_data_list)}개 종목)",
-                message=notification_message,
-                notification_type="portfolio_analysis"
-            )
-            
-            logger.info(f"📧 {user.name}님에게 {len(etf_data_list)}개 ETF 통합 투자 알림 전송 완료")
-            
-        except Exception as e:
-            logger.error(f"❌ 통합 알림 전송 중 오류: {e}")
     
     async def record_metrics(self, user_count: int, processing_time: float):
         """성능 메트릭 기록"""

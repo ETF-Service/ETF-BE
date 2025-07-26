@@ -67,6 +67,22 @@ class EmailService:
             logger.error(f"시스템 알림 이메일 전송 실패: {e}")
             return False
 
+    def send_portfolio_analysis_notification(self, user_email: str, user_name: str, data: Dict[str, Any]) -> bool:
+        """포트폴리오 분석 결과 알림 이메일 전송"""
+        if not self.enabled:
+            logger.warning("이메일 서비스가 비활성화되어 있습니다.")
+            return False
+
+        try:
+            subject = f"[ETF앱] 포트폴리오 투자 분석 알림 ({data.get('etf_count', 0)}개 종목)"
+            html_content = self._create_portfolio_analysis_template(user_name, data)
+            
+            return self._send_email_direct(user_email, subject, html_content)
+            
+        except Exception as e:
+            logger.error(f"포트폴리오 분석 알림 이메일 전송 실패: {e}")
+            return False
+
     def _send_email_direct(self, to_email: str, subject: str, html_content: str) -> bool:
         """SendGrid API를 직접 호출하여 이메일 전송"""
         try:
@@ -309,6 +325,90 @@ class EmailService:
                 <div class="footer">
                     <p>본 메일은 ETF 투자 관리 시스템에서 자동으로 발송되었습니다.</p>
                     <p>© 2024 ETF 투자 관리팀</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    def _create_portfolio_analysis_template(self, user_name: str, data: Dict[str, Any]) -> str:
+        """포트폴리오 분석 알림 이메일 템플릿"""
+        etf_list = data.get('etf_list', [])
+        total_amount = data.get('total_amount', 0)
+        etf_count = data.get('etf_count', 0)
+        analysis_result = data.get('analysis_result', '분석 결과가 없습니다.')
+        recommendation = data.get('recommendation', '권장사항이 없습니다.')
+        confidence_score = data.get('confidence_score', 0)
+        
+        # ETF 목록 HTML 생성
+        etf_html = ""
+        for etf in etf_list:
+            etf_html += f"<li>• {etf}</li>"
+        
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>포트폴리오 투자 분석 알림</title>
+            <style>
+                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #9c27b0 0%, #673ab7 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                .content {{ background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }}
+                .section {{ margin-bottom: 25px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                .highlight {{ background: #f3e5f5; padding: 15px; border-radius: 5px; border-left: 4px solid #9c27b0; }}
+                .etf-list {{ list-style: none; padding: 0; }}
+                .etf-list li {{ padding: 8px 0; border-bottom: 1px solid #eee; }}
+                .metric {{ display: inline-block; background: #f5f5f5; padding: 8px 12px; border-radius: 5px; margin: 5px; }}
+                .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 14px; }}
+                .button {{ display: inline-block; background: #9c27b0; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>📊 포트폴리오 투자 분석 알림</h1>
+                    <p>안녕하세요, {user_name}님!</p>
+                </div>
+                
+                <div class="content">
+                    <div class="section">
+                        <h2>📈 ETF 포트폴리오 분석 결과</h2>
+                        <p>오늘 투자일인 {etf_count}개 ETF에 대한 통합 분석 결과입니다.</p>
+                    </div>
+                    
+                    <div class="section">
+                        <h3>💰 투자할 ETF 목록</h3>
+                        <ul class="etf-list">
+                            {etf_html}
+                        </ul>
+                        <div style="text-align: center; margin-top: 20px;">
+                            <div class="metric">총 투자 금액: {total_amount:,}원</div>
+                            <div class="metric">ETF 개수: {etf_count}개</div>
+                        </div>
+                    </div>
+                    
+                    <div class="section highlight">
+                        <h3>🤖 AI 포트폴리오 분석</h3>
+                        <p>{analysis_result}</p>
+                        <div class="metric">신뢰도: {confidence_score:.1f}%</div>
+                    </div>
+                    
+                    <div class="section">
+                        <h3>💡 종합 투자 권장사항</h3>
+                        <p><strong>권장사항:</strong> {recommendation}</p>
+                    </div>
+                    
+                    <div class="section" style="text-align: center;">
+                        <a href="#" class="button">앱에서 자세히 보기</a>
+                    </div>
+                </div>
+                
+                <div class="footer">
+                    <p>본 메일은 ETF 투자 관리 시스템에서 자동으로 발송되었습니다.</p>
+                    <p>© ETF 투자 관리팀</p>
                 </div>
             </div>
         </body>
