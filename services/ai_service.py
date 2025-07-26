@@ -158,7 +158,8 @@ async def request_ai_analysis(
                 if response.status_code == 200:
                     result = response.json()
                     if result.get("success", False):
-                        logger.info(f"✅ AI 분석 성공 (시도 {attempt + 1})")
+                        processing_time = result.get("processing_time", 0)
+                        logger.info(f"✅ AI 분석 성공 (시도 {attempt + 1}, 처리시간: {processing_time:.2f}초)")
                         return result.get("answer", "")
                     else:
                         error_msg = result.get('error', 'Unknown error')
@@ -194,6 +195,60 @@ async def request_ai_analysis(
     
     logger.error(f"❌ AI 서비스 요청 최대 재시도 횟수 초과 ({MAX_RETRIES}회)")
     return None
+
+async def request_batch_ai_analysis(
+    analysis_requests: list
+) -> list:
+    """ETF_AI 서비스에 배치 분석 요청 - 병렬 처리 지원"""
+    
+    import asyncio
+    
+    try:
+        logger.info(f"🔄 배치 AI 분석 요청 시작: {len(analysis_requests)}개")
+        
+        async with httpx.AsyncClient(timeout=120.0) as client:  # 배치 처리이므로 더 긴 타임아웃
+            response = await client.post(
+                f"{AI_SERVICE_URL}/analyze/batch",
+                json={
+                    "requests": [
+                        {
+                            "messages": req["messages"],
+                            "api_key": req["api_key"],
+                            "model_type": req["model_type"]
+                        }
+                        for req in analysis_requests
+                    ]
+                }
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success", False):
+                    summary = result.get("summary", {})
+                    logger.info(f"✅ 배치 AI 분석 성공: {summary.get('successful_count', 0)}개 성공, {summary.get('failed_count', 0)}개 실패, 총 시간: {summary.get('total_processing_time', 0):.2f}초")
+                    
+                    # 성공한 결과들만 반환
+                    successful_results = result.get("results", {}).get("successful", [])
+                    return [res.get("answer", "") for res in successful_results]
+                else:
+                    error_msg = result.get('error', 'Unknown error')
+                    logger.error(f"❌ 배치 AI 분석 실패: {error_msg}")
+                    return []
+            else:
+                logger.error(f"❌ 배치 AI 서비스 HTTP 오류: {response.status_code}")
+                return []
+                
+    except httpx.TimeoutException:
+        logger.warning(f"⏰ 배치 AI 서비스 타임아웃")
+        return []
+        
+    except httpx.ConnectError:
+        logger.error(f"🔌 배치 AI 서비스 연결 오류: {AI_SERVICE_URL}")
+        return []
+        
+    except Exception as e:
+        logger.error(f"❌ 배치 AI 서비스 요청 중 예상치 못한 오류: {e}")
+        return []
 
 def determine_notification_need(analysis_result: str, previous_analysis: str = None) -> bool:
     """
