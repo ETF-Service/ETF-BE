@@ -3,9 +3,10 @@ from typing import Optional
 from jose import JWTError, jwt
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import os
 
 # JWT 설정
-SECRET_KEY = "your-secret-key-here"  # 실제 운영시에는 환경변수로 관리
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")  # 실제 운영시에는 환경변수로 관리
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
