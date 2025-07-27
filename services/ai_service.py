@@ -259,91 +259,130 @@ def determine_notification_need(analysis_result: str) -> bool:
         return True  # 오류 시 안전하게 알림 전송
 
 def analyze_recommendation_importance(analysis_result: str) -> float:
-    """투자 권장사항의 중요도 분석"""
+    """투자 권장사항의 중요도 분석 (가중치 기반으로 변경)"""
     try:
-        # 중요도가 높은 키워드들
-        high_importance_keywords = [
-            '매수', '매도', '증가', '감소', '상향', '하향', '추천', '회수',
-            '즉시', '당장', '긴급', '주의', '경고', '변경', '조정'
-        ]
-        
-        # 중간 중요도 키워드들
-        medium_importance_keywords = [
-            '유지', '보유', '현상유지', '관망', '신중', '보수'
-        ]
+        # 가중치 기반 키워드
+        keyword_weights = {
+            # 직접적인 행동 지시 (3점)
+            '매수': 3, '매도': 3, '증가': 3, '감소': 3, '상향': 3, '하향': 3, '변경': 3, '조정': 3, '회수': 3,
+            # 긴급성/경고 (2점)
+            '즉시': 2, '당장': 2, '긴급': 2, '주의': 2, '경고': 2,
+            # 추천/제안 (1점)
+            '추천': 1, '권고': 1, '제안': 1,
+            # 중립/관망 (0점)
+            '유지': 0, '보유': 0, '현상유지': 0, '관망': 0, '신중': 0, '보수': 0
+        }
         
         text_lower = analysis_result.lower()
         
-        # 높은 중요도 키워드가 있으면 최대 점수
-        if any(keyword in text_lower for keyword in high_importance_keywords):
-            logger.debug(f"권장사항 중요도 분석: '높음' 키워드 매칭. 점수: 1.0")
-            return 1.0
-        # 중간 중요도 키워드가 있으면 중간 점수
-        elif any(keyword in text_lower for keyword in medium_importance_keywords):
-            logger.debug(f"권장사항 중요도 분석: '중간' 키워드 매칭. 점수: 0.2 (하향 조정)")
-            return 0.2
+        score = 0
+        matched_keywords = []
+        for keyword, weight in keyword_weights.items():
+            if keyword in text_lower:
+                score += weight
+                matched_keywords.append(f"{keyword}({weight})")
+        
+        logger.debug(f"권장사항 중요도 분석: 매칭된 키워드: {', '.join(matched_keywords) if matched_keywords else '없음'}. 총점: {score}")
+
+        # 점수 구간에 따라 최종 점수 반환
+        # 5점 이상이면 매우 중요(1.0), 3점 이상이면 중요(0.8), 1점 이상이면 보통(0.5), 그 외에는 낮음(0.2)
+        if score >= 5:
+            final_score = 1.0
+        elif score >= 3:
+            final_score = 0.8
+        elif score >= 1:
+            final_score = 0.5
         else:
-            logger.debug(f"권장사항 중요도 분석: 키워드 미매칭. 기본 점수: 0.1 (하향 조정)")
-            return 0.1  # 기본값
+            final_score = 0.2
+            
+        logger.debug(f"권장사항 중요도 분석: 최종 점수: {final_score}")
+        return final_score
             
     except Exception as e:
         logger.error(f"❌ 권장사항 중요도 분석 중 오류: {e}")
         return 0.5
 
 def analyze_risk_level(analysis_result: str) -> float:
-    """위험도 수준 분석 (0.0 ~ 1.0)"""
+    """위험도 수준 분석 (0.0 ~ 1.0, 가중치 기반으로 변경)"""
     try:
-        # 위험도 관련 키워드
-        risk_keywords = {
-            'high_risk': ['높은 위험', '위험도 증가', '불안정', '변동성 증가', '위험', '주의'],
-            'low_risk': ['낮은 위험', '안정적', '보수적', '안전', '평온'],
-            'medium_risk': ['보통 위험', '중간', '적당한', '보통']
+        # 가중치 기반 키워드
+        keyword_weights = {
+            # 매우 높음 (3점)
+            '불안정': 3, '변동성 증가': 3, '위험도 증가': 3,
+            # 높음 (2점)
+            '위험': 2, '주의': 2, '높은 위험': 2,
+            # 보통 (1점)
+            '보통 위험': 1, '중간': 1, '적당한': 1, '보통': 1,
+            # 낮음 (0점)
+            '낮은 위험': 0, '안정적': 0, '보수적': 0, '안전': 0, '평온': 0
         }
         
         text_lower = analysis_result.lower()
         
-        if any(keyword in text_lower for keyword in risk_keywords['high_risk']):
-            logger.debug(f"위험도 분석: '높음' 키워드 매칭. 점수: 0.8")
-            return 0.8
-        elif any(keyword in text_lower for keyword in risk_keywords['low_risk']):
-            logger.debug(f"위험도 분석: '낮음' 키워드 매칭. 점수: 0.2")
-            return 0.2
-        elif any(keyword in text_lower for keyword in risk_keywords['medium_risk']):
-            logger.debug(f"위험도 분석: '중간' 키워드 매칭. 점수: 0.5")
-            return 0.5
-        
-        logger.debug(f"위험도 분석: 키워드 미매칭. 기본 점수: 0.5")
-        return 0.5  # 기본값
+        score = 0
+        matched_keywords = []
+        for keyword, weight in keyword_weights.items():
+            if keyword in text_lower:
+                score += weight
+                matched_keywords.append(f"{keyword}({weight})")
+
+        logger.debug(f"위험도 분석: 매칭된 키워드: {', '.join(matched_keywords) if matched_keywords else '없음'}. 총점: {score}")
+
+        # 점수 구간에 따라 최종 점수 반환
+        if score >= 4:
+            final_score = 1.0
+        elif score >= 2:
+            final_score = 0.8
+        elif score >= 1:
+            final_score = 0.5
+        else:
+            final_score = 0.2
+            
+        logger.debug(f"위험도 분석: 최종 점수: {final_score}")
+        return final_score
         
     except Exception as e:
         logger.error(f"❌ 위험도 분석 중 오류: {e}")
         return 0.5
 
 def analyze_market_importance(analysis_result: str) -> float:
-    """시장 상황의 중요도 분석"""
+    """시장 상황의 중요도 분석 (가중치 기반으로 변경)"""
     try:
-        # 중요한 시장 상황 키워드
-        important_market_keywords = [
-            '상승장', '하락장', '호황', '침체', '변동성', '불안정', '급변',
-            '긴급', '위험', '기회', '부정적', '긍정적'
-        ]
-        
-        # 일반적인 시장 상황 키워드
-        normal_market_keywords = [
-            '안정', '평온', '예측가능', '일정', '관망'
-        ]
+        # 가중치 기반 키워드
+        keyword_weights = {
+            # 매우 중요 (3점)
+            '급변': 3, '긴급': 3, '침체': 3, '위험': 3,
+            # 중요 (2점)
+            '하락장': 2, '변동성': 2, '불안정': 2, '부정적': 2,
+            # 보통 (1점)
+            '상승장': 1, '호황': 1, '기회': 1, '긍정적': 1,
+            # 안정 (0점)
+            '안정': 0, '평온': 0, '예측가능': 0, '일정': 0, '관망': 0
+        }
         
         text_lower = analysis_result.lower()
         
-        if any(keyword in text_lower for keyword in important_market_keywords):
-            logger.debug(f"시장 상황 중요도 분석: '중요' 키워드 매칭. 점수: 0.9")
-            return 0.9
-        elif any(keyword in text_lower for keyword in normal_market_keywords):
-            logger.debug(f"시장 상황 중요도 분석: '일반' 키워드 매칭. 점수: 0.3")
-            return 0.3
+        score = 0
+        matched_keywords = []
+        for keyword, weight in keyword_weights.items():
+            if keyword in text_lower:
+                score += weight
+                matched_keywords.append(f"{keyword}({weight})")
+        
+        logger.debug(f"시장 상황 중요도 분석: 매칭된 키워드: {', '.join(matched_keywords) if matched_keywords else '없음'}. 총점: {score}")
+
+        # 점수 구간에 따라 최종 점수 반환
+        if score >= 4:
+            final_score = 1.0
+        elif score >= 2:
+            final_score = 0.8
+        elif score >= 1:
+            final_score = 0.5
         else:
-            logger.debug(f"시장 상황 중요도 분석: 키워드 미매칭. 기본 점수: 0.5")
-            return 0.5
+            final_score = 0.2
+            
+        logger.debug(f"시장 상황 중요도 분석: 최종 점수: {final_score}")
+        return final_score
             
     except Exception as e:
         logger.error(f"❌ 시장 상황 중요도 분석 중 오류: {e}")
