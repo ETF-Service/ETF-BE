@@ -33,7 +33,7 @@ def setup_logging():
     
     # 로깅 설정
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             # 파일 핸들러 (로그 파일에 저장)

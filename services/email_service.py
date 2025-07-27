@@ -134,7 +134,7 @@ class EmailService:
             return False
 
     def _create_ai_analysis_email_template(self, user_name: str, data: Dict[str, Any]) -> str:
-        """AI 분석 알림 이메일 템플릿"""
+        """AI 분석 알림 이메일 템플릿 (개선된 구조화된 내용)"""
         etf_symbol = data.get('etf_symbol', 'ETF')
         analysis_summary = data.get('analysis_summary', '분석 결과가 없습니다.')
         recommendation = data.get('recommendation', '권장사항이 없습니다.')
@@ -143,6 +143,32 @@ class EmailService:
         recommended_weight = data.get('recommended_weight', 0)
         adjustment_amount = data.get('adjustment_amount', 0)
         detailed_analysis = data.get('detailed_analysis', '상세 분석 내용이 없습니다.')
+        
+        # ETF별 분석 결과 파싱 (구조화된 분석 결과에서 추출)
+        etf_analysis = self._parse_etf_analysis(analysis_summary)
+        
+        # ETF별 분석 결과 HTML 생성
+        etf_analysis_html = ""
+        if etf_analysis['etfs']:
+            for etf in etf_analysis['etfs']:
+                etf_analysis_html += f"""
+                <div class="etf-item">
+                    <div class="recommendation">• {etf['symbol']}: {etf['recommendation']}</div>
+                    {f'<div class="reason">이유: {etf["reason"]}</div>' if etf['reason'] else ''}
+                </div>
+                """
+        else:
+            etf_analysis_html = f"<p>{analysis_summary}</p>"
+        
+        # 종합 의견 표시
+        summary_html = ""
+        if etf_analysis['summary']:
+            summary_html = f"""
+            <div class="summary-box">
+                <h4>📋 종합 의견</h4>
+                <p>{etf_analysis['summary']}</p>
+            </div>
+            """
         
         return f"""
         <!DOCTYPE html>
@@ -161,6 +187,11 @@ class EmailService:
                 .metric {{ display: inline-block; background: #f5f5f5; padding: 8px 12px; border-radius: 5px; margin: 5px; }}
                 .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 14px; }}
                 .button {{ display: inline-block; background: #2196f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 0; }}
+                .etf-item {{ border-bottom: 1px solid #eee; padding: 15px 0; }}
+                .etf-item:last-child {{ border-bottom: none; }}
+                .recommendation {{ font-weight: bold; color: #2196f3; }}
+                .reason {{ color: #666; font-style: italic; margin-top: 5px; }}
+                .summary-box {{ background: #f0f8ff; padding: 15px; border-radius: 5px; border-left: 4px solid #4caf50; }}
             </style>
         </head>
         <body>
@@ -178,9 +209,11 @@ class EmailService:
                     
                     <div class="section highlight">
                         <h3>🤖 AI 분석 결과</h3>
-                        <p>{analysis_summary}</p>
-                        <div class="metric">신뢰도: {confidence_score}%</div>
+                        {etf_analysis_html}
+                        <div class="metric">신뢰도: {confidence_score*100}%</div>
                     </div>
+                    
+                    {summary_html}
                     
                     <div class="section">
                         <h3>📈 투자 권장사항</h3>
@@ -188,7 +221,7 @@ class EmailService:
                         <div style="display: flex; justify-content: space-between; margin: 20px 0;">
                             <div class="metric">기존 비중: {current_weight}%</div>
                             <div class="metric">권장 비중: {recommended_weight}%</div>
-                            <div class="metric">조정 금액: {adjustment_amount:,}원</div>
+                            <div class="metric">조정 금액: {adjustment_amount:,}만 원</div>
                         </div>
                     </div>
                     
@@ -332,7 +365,7 @@ class EmailService:
         """
 
     def _create_portfolio_analysis_template(self, user_name: str, data: Dict[str, Any]) -> str:
-        """포트폴리오 분석 알림 이메일 템플릿"""
+        """포트폴리오 분석 알림 이메일 템플릿 (개선된 구조화된 내용)"""
         etf_list = data.get('etf_list', [])
         total_amount = data.get('total_amount', 0)
         etf_count = data.get('etf_count', 0)
@@ -340,10 +373,36 @@ class EmailService:
         recommendation = data.get('recommendation', '권장사항이 없습니다.')
         confidence_score = data.get('confidence_score', 0)
         
+        # ETF별 분석 결과 파싱
+        etf_analysis = self._parse_etf_analysis(analysis_result)
+        
         # ETF 목록 HTML 생성
         etf_html = ""
         for etf in etf_list:
             etf_html += f"<li>• {etf}</li>"
+        
+        # ETF별 분석 결과 HTML 생성
+        etf_analysis_html = ""
+        if etf_analysis['etfs']:
+            for etf in etf_analysis['etfs']:
+                etf_analysis_html += f"""
+                <div class="etf-item">
+                    <div class="recommendation">• {etf['symbol']}: {etf['recommendation']}</div>
+                    {f'<div class="reason">이유: {etf["reason"]}</div>' if etf['reason'] else ''}
+                </div>
+                """
+        else:
+            etf_analysis_html = f"<p>{analysis_result}</p>"
+        
+        # 종합 의견 표시
+        summary_html = ""
+        if etf_analysis['summary']:
+            summary_html = f"""
+            <div class="summary-box">
+                <h4>📋 종합 의견</h4>
+                <p>{etf_analysis['summary']}</p>
+            </div>
+            """
         
         return f"""
         <!DOCTYPE html>
@@ -364,6 +423,11 @@ class EmailService:
                 .metric {{ display: inline-block; background: #f5f5f5; padding: 8px 12px; border-radius: 5px; margin: 5px; }}
                 .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 14px; }}
                 .button {{ display: inline-block; background: #9c27b0; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 0; }}
+                .etf-item {{ border-bottom: 1px solid #eee; padding: 15px 0; }}
+                .etf-item:last-child {{ border-bottom: none; }}
+                .recommendation {{ font-weight: bold; color: #9c27b0; }}
+                .reason {{ color: #666; font-style: italic; margin-top: 5px; }}
+                .summary-box {{ background: #f0f8ff; padding: 15px; border-radius: 5px; border-left: 4px solid #4caf50; }}
             </style>
         </head>
         <body>
@@ -385,16 +449,18 @@ class EmailService:
                             {etf_html}
                         </ul>
                         <div style="text-align: center; margin-top: 20px;">
-                            <div class="metric">총 투자 금액: {total_amount:,}원</div>
+                            <div class="metric">총 투자 금액: {total_amount:,}만 원</div>
                             <div class="metric">ETF 개수: {etf_count}개</div>
                         </div>
                     </div>
                     
                     <div class="section highlight">
                         <h3>🤖 AI 포트폴리오 분석</h3>
-                        <p>{analysis_result}</p>
+                        {etf_analysis_html}
                         <div class="metric">신뢰도: {confidence_score:.1f}%</div>
                     </div>
+                    
+                    {summary_html}
                     
                     <div class="section">
                         <h3>💡 종합 투자 권장사항</h3>
@@ -414,6 +480,62 @@ class EmailService:
         </body>
         </html>
         """
+
+    def _parse_etf_analysis(self, analysis_text: str) -> Dict[str, Any]:
+        """
+        AI 분석 결과에서 ETF별 정보를 파싱
+        
+        Args:
+            analysis_text: AI 분석 결과 텍스트
+        
+        Returns:
+            파싱된 ETF별 분석 정보
+        """
+        try:
+            etf_analysis = {
+                'etfs': [],
+                'summary': '',
+                'recommendations': []
+            }
+            
+            lines = analysis_text.split('\n')
+            current_etf = None
+            
+            for line in lines:
+                line = line.strip()
+                
+                # ETF 항목 시작 (예: "- SPY: 비중 유지")
+                if line.startswith('- ') and ':' in line:
+                    etf_part = line.split(':')[0].replace('- ', '').strip()
+                    recommendation_part = line.split(':', 1)[1].strip() if ':' in line else ''
+                    
+                    # 괄호 안의 이유 추출
+                    reason = ''
+                    if '(' in recommendation_part and ')' in recommendation_part:
+                        reason_start = recommendation_part.find('(')
+                        reason_end = recommendation_part.find(')')
+                        reason = recommendation_part[reason_start + 1:reason_end]
+                        recommendation_part = recommendation_part[:reason_start].strip()
+                    
+                    etf_analysis['etfs'].append({
+                        'symbol': etf_part,
+                        'recommendation': recommendation_part,
+                        'reason': reason
+                    })
+                
+                # 종합 의견 추출
+                elif '종합 의견' in line or '종합' in line:
+                    etf_analysis['summary'] = line
+                
+                # 권장사항 추출
+                elif any(keyword in line for keyword in ['권장', '추천', '제안']):
+                    etf_analysis['recommendations'].append(line)
+            
+            return etf_analysis
+            
+        except Exception as e:
+            logger.error(f"ETF 분석 파싱 중 오류: {e}")
+            return {'etfs': [], 'summary': '', 'recommendations': []}
 
 # 전역 인스턴스 생성
 email_service = EmailService() 

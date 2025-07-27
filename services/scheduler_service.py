@@ -20,7 +20,6 @@ from crud.user import get_user_by_id
 from services.ai_service import (
     request_batch_ai_analysis, 
     create_integrated_analysis_messages, 
-    get_previous_analysis, 
     save_analysis_result, 
     determine_notification_need, 
     extract_recommendation, extract_confidence_score)
@@ -203,7 +202,7 @@ class NotificationScheduler:
         return results
     
     async def process_integrated_analysis_result(self, db: Session, user_data: dict, analysis_result: str):
-        """통합 AI 분석 결과 처리 및 알림 생성"""
+        """통합 AI 분석 결과 처리 및 알림 생성 (이전 분석 결과 없이)"""
         try:
             user = user_data["user"]
             user_setting = user_data["user_setting"]
@@ -213,14 +212,11 @@ class NotificationScheduler:
                 logger.warning(f"⚠️ {user.name}님의 통합 ETF 분석 결과가 없습니다")
                 return None
             
-            # 이전 분석 결과 조회 (포트폴리오 전체 기준)
-            portfolio_key = f"portfolio_{user.id}"
-            previous_analysis = get_previous_analysis(user.id, portfolio_key, db)
-            
-            # 알림 전송 여부 결정
-            should_notify = determine_notification_need(analysis_result, previous_analysis)
+            # 알림 전송 여부 결정 (이전 분석 결과 없이)
+            should_notify = determine_notification_need(analysis_result)
             
             # 분석 결과 저장
+            portfolio_key = f"portfolio_{user.id}"
             save_analysis_result(user.id, portfolio_key, analysis_result, db)
             
             # 추천사항 및 신뢰도 추출

@@ -141,30 +141,29 @@ class NotificationService:
             
             # 이메일 알림 전송 (알림 채널에 email이 포함된 경우)
             email_sent = False
-            if user_settings.notification_channels and 'email' in user_settings.notification_channels:
-                # ETF 목록 및 총 금액 계산
-                etf_list = []
-                total_amount = 0
-                for etf_setting in etf_settings:
-                    etf_list.append({
-                        'name': etf_setting.etf.name if etf_setting.etf else etf_setting.symbol,
-                        'amount': etf_setting.amount
-                    })
-                    total_amount += etf_setting.amount
-                
-                email_data = {
-                    'etf_list': etf_list,
-                    'total_amount': total_amount
-                }
-                
-                email_sent = email_service.send_investment_reminder(
-                    user.email, user.name, email_data
-                )
-                
-                if email_sent:
-                    logger.info(f"📧 {user.name}님의 투자일 이메일 알림 전송 성공")
-                else:
-                    logger.warning(f"⚠️ {user.name}님의 투자일 이메일 알림 전송 실패")
+            # ETF 목록 및 총 금액 계산
+            etf_list = []
+            total_amount = 0
+            for etf_setting in etf_settings:
+                etf_list.append({
+                    'name': etf_setting.etf.name if etf_setting.etf else etf_setting.symbol,
+                    'amount': etf_setting.amount
+                })
+                total_amount += etf_setting.amount
+            
+            email_data = {
+                'etf_list': etf_list,
+                'total_amount': total_amount
+            }
+            
+            email_sent = email_service.send_investment_reminder(
+                user.email, user.name, email_data
+            )
+            
+            if email_sent:
+                logger.info(f"📧 {user.name}님의 투자일 이메일 알림 전송 성공")
+            else:
+                logger.warning(f"⚠️ {user.name}님의 투자일 이메일 알림 전송 실패")
             
             # 알림 내용 구성
             title = self.notification_titles.get('investment_reminder', '📅 투자일 알림')
@@ -224,15 +223,14 @@ class NotificationService:
             
             # 이메일 알림 전송 (알림 채널에 email이 포함된 경우)
             email_sent = False
-            if user_settings.notification_channels and 'email' in user_settings.notification_channels:
-                email_sent = email_service.send_system_notification(
-                    user.email, user.name, title, content
-                )
-                
-                if email_sent:
-                    logger.info(f"📧 {user.name}님의 시스템 이메일 알림 전송 성공")
-                else:
-                    logger.warning(f"⚠️ {user.name}님의 시스템 이메일 알림 전송 실패")
+            email_sent = email_service.send_system_notification(
+                user.email, user.name, title, content
+            )
+            
+            if email_sent:
+                logger.info(f"📧 {user.name}님의 시스템 이메일 알림 전송 성공")
+            else:
+                logger.warning(f"⚠️ {user.name}님의 시스템 이메일 알림 전송 실패")
             
             # 데이터베이스에 알림 저장
             sent_via = "email" if email_sent else "app"
@@ -344,24 +342,23 @@ class NotificationService:
                 
                 # 이메일 알림 전송 (알림 채널에 email이 포함된 경우)
                 email_sent = False
-                if user_settings.notification_channels and 'email' in user_settings.notification_channels:
-                    email_data = {
-                        'etf_list': etf_list,
-                        'total_amount': total_amount,
-                        'etf_count': len(etf_data_list),
-                        'analysis_result': analysis_result,
-                        'recommendation': recommendation,
-                        'confidence_score': confidence_score
-                    }
-                    
-                    email_sent = email_service.send_portfolio_analysis_notification(
-                        user.email, user.name, email_data
-                    )
-                    
-                    if email_sent:
-                        logger.info(f"📧 {user.name}님의 포트폴리오 분석 이메일 알림 전송 성공")
-                    else:
-                        logger.warning(f"⚠️ {user.name}님의 포트폴리오 분석 이메일 알림 전송 실패")
+                email_data = {
+                    'etf_list': etf_list,
+                    'total_amount': total_amount,
+                    'etf_count': len(etf_data_list),
+                    'analysis_result': analysis_result,
+                    'recommendation': recommendation,
+                    'confidence_score': confidence_score
+                }
+                
+                email_sent = email_service.send_portfolio_analysis_notification(
+                    user.email, user.name, email_data
+                )
+                
+                if email_sent:
+                    logger.info(f"📧 {user.name}님의 포트폴리오 분석 이메일 알림 전송 성공")
+                else:
+                    logger.warning(f"⚠️ {user.name}님의 포트폴리오 분석 이메일 알림 전송 실패")
                 
                 # 데이터베이스에 알림 저장
                 title = f"📊 ETF 포트폴리오 투자 분석 알림 ({len(etf_data_list)}개 종목)"
