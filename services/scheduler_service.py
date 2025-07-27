@@ -118,7 +118,7 @@ class NotificationScheduler:
         return today_investors
     
     async def process_users_in_parallel(self, db: Session, today_users: List):
-        """사용자들을 병렬로 처리 (한 사용자의 모든 ETF를 한 번에 분석)"""
+        """사용자들을 병렬로 처리하고, 결과를 취합하여 대량 알림을 전송"""
         logger.info(f"🔄 사용자별 통합 AI 분석 시작: {len(today_users)}개 사용자")
         
         # 사용자별 통합 분석 요청 데이터 준비
@@ -177,81 +177,50 @@ class NotificationScheduler:
         
         if not analysis_requests:
             logger.warning("⚠️ 처리할 AI 분석 요청이 없습니다")
-            return []
+            return
         
         # 배치 AI 분석 실행
         analysis_results = await request_batch_ai_analysis(analysis_requests)
         
-        # 결과 처리 및 알림 생성
-        results = []
+        # 알림 전송을 위한 데이터 수집
+        notifications_to_send = []
         for i, analysis_result in enumerate(analysis_results):
-            if i in user_data_map:
+            if i in user_data_map and analysis_result:
                 try:
                     user_data = user_data_map[i]
-                    result = await self.process_integrated_analysis_result(
-                        db, user_data, analysis_result
-                    )
-                    results.append(result)
+                    user = user_data["user"]
+                    
+                    # 분석 결과 저장
+                    portfolio_key = f"portfolio_{user.id}"
+                    save_analysis_result(user.id, portfolio_key, analysis_result, db)
+                    
+                    # 알림 필요성 판단
+                    should_notify = determine_notification_need(analysis_result)
+                    logger.info(f"✅ {user.name}님의 {len(user_data['etf_data_list'])}개 ETF 통합 분석 완료: 알림 {'전송 필요' if should_notify else '불필요'}")
+
+                    if should_notify:
+                        recommendation = extract_recommendation(analysis_result)
+                        confidence_score = extract_confidence_score(analysis_result)
+                        
+                        notifications_to_send.append({
+                            'type': 'integrated_investment',
+                            'user_id': user.id,
+                            'user_setting': user_data["user_setting"],
+                            'etf_data_list': user_data["etf_data_list"],
+                            'analysis_result': analysis_result,
+                            'recommendation': recommendation,
+                            'confidence_score': confidence_score
+                        })
                 except Exception as e:
                     logger.error(f"❌ 통합 분석 결과 처리 중 오류: {e}")
-                    results.append(None)
-        
-        success_count = sum(1 for result in results if result is not None)
-        logger.info(f"✅ 사용자별 통합 AI 분석 완료: 성공 {success_count}개, 실패 {len(results) - success_count}개")
-        
-        return results
-    
-    async def process_integrated_analysis_result(self, db: Session, user_data: dict, analysis_result: str):
-        """통합 AI 분석 결과 처리 및 알림 생성 (이전 분석 결과 없이)"""
-        try:
-            user = user_data["user"]
-            user_setting = user_data["user_setting"]
-            etf_data_list = user_data["etf_data_list"]
-            
-            if not analysis_result:
-                logger.warning(f"⚠️ {user.name}님의 통합 ETF 분석 결과가 없습니다")
-                return None
-            
-            # 알림 전송 여부 결정 (이전 분석 결과 없이)
-            should_notify = determine_notification_need(analysis_result)
-            
-            # 분석 결과 저장
-            portfolio_key = f"portfolio_{user.id}"
-            save_analysis_result(user.id, portfolio_key, analysis_result, db)
-            
-            # 추천사항 및 신뢰도 추출
-            recommendation = extract_recommendation(analysis_result)
-            confidence_score = extract_confidence_score(analysis_result)
-            
-            # 알림 전송
-            if should_notify:
-                success = await notification_service.send_integrated_investment_notification(
-                    db=db,
-                    user=user,
-                    user_setting=user_setting,
-                    etf_data_list=etf_data_list,
-                    analysis_result=analysis_result,
-                    recommendation=recommendation,
-                    confidence_score=confidence_score
-                )
-                
-                if not success:
-                    logger.error(f"❌ {user.name}님의 통합 투자 알림 전송 실패")
-            
-            logger.info(f"✅ {user.name}님의 {len(etf_data_list)}개 ETF 통합 분석 완료: 알림 {'전송' if should_notify else '불필요'}")
-            
-            return {
-                'user_id': user.id,
-                'etf_count': len(etf_data_list),
-                'should_notify': should_notify,
-                'analysis_result': analysis_result,
-                'recommendation': recommendation,
-                'confidence_score': confidence_score
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ 통합 분석 결과 처리 중 오류: {e}")
-            return None
+
+        # 수집된 알림들을 대량으로 전송
+        if notifications_to_send:
+            logger.info(f"📤 통합 투자 알림 대량 전송 시작: {len(notifications_to_send)}개")
+            result_summary = await notification_service.send_bulk_notifications(db, notifications_to_send)
+            logger.info(f"✅ 통합 투자 알림 대량 전송 완료: {result_summary}")
+        else:
+            logger.info("ℹ️ 전송할 통합 투자 알림이 없습니다.")
     
     async def record_metrics(self, user_count: int, processing_time: float):
         """성능 메트릭 기록"""
