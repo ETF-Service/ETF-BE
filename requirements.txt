@@ -1,17 +1,12 @@
-fastapi==0.116.0
-uvicorn==0.35.0
-sqlalchemy==2.0.41
-passlib==1.7.4
-bcrypt==4.3.0
-python-jose[cryptography]==3.5.0
-python-multipart==0.0.20
-python-dotenv==1.0.0
-# 알림 시스템 관련 패키지
-apscheduler==3.10.4
-sendgrid==6.11.0
-
-httpx==0.28.1
-# 테스트 관련 패키지
-pytest==8.0.0
-pytest-asyncio==0.23.0
-pytest-cov==4.1.0 
+fastapi
+uvicorn
+SQLAlchemy
+passlib[bcrypt]
+python-jose[cryptography]
+python-dotenv
+APScheduler
+httpx
+openai
+sentence-transformers==3.0.1
+torch
+transformers 

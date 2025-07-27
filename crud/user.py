@@ -124,3 +124,22 @@ def verify_user_credentials(db: Session, user_id: str, password: str) -> Optiona
     except SQLAlchemyError as e:
         db.rollback()
         raise Exception(f"사용자 인증 실패: {str(e)}")
+
+
+def update_user_investment_settings(db: Session, user_id: int, settings_data: dict) -> Optional[User]:
+    """사용자 투자 설정 정보 업데이트"""
+    try:
+        db_user = get_user_by_id(db, user_id)
+        if not db_user or not db_user.settings:
+            return None
+
+        for field, value in settings_data.items():
+            if hasattr(db_user.settings, field):
+                setattr(db_user.settings, field, value)
+        
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise Exception(f"투자 설정 업데이트 실패: {str(e)}")

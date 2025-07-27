@@ -20,9 +20,7 @@ from crud.user import get_user_by_id
 from services.ai_service import (
     request_batch_ai_analysis, 
     create_integrated_analysis_messages, 
-    save_analysis_result, 
-    determine_notification_need, 
-    extract_recommendation, extract_confidence_score)
+    determine_notification_need)
 from services.notification_service import notification_service
 
 logger = logging.getLogger(__name__)
@@ -37,12 +35,10 @@ class NotificationScheduler:
     def start(self):
         """스케줄러 시작"""
         if not self.is_running:
-            # 환경변수에서 간격 설정 가져오기
-            interval = os.getenv('SCHEDULER_INTERVAL', '*/5')
-            
             self.scheduler.add_job(
                 self.check_investment_dates,
-                CronTrigger(minute=interval),
+                # CronTrigger(hour='8-17/3', minute='0'),
+				CronTrigger(minute='*/5'),
                 id='investment_notification_check',
                 name='투자일 알림 체크 (병렬 처리 버전)',
                 replace_existing=True
@@ -50,7 +46,7 @@ class NotificationScheduler:
             
             self.scheduler.start()
             self.is_running = True
-            logger.info(f"✅ 병렬 처리 알림 스케줄러 시작됨 (간격: {interval}분, 최대 동시 처리: {self.max_concurrent_users}명)")
+            logger.info(f"✅ 병렬 처리 알림 스케줄러 시작됨 (매일 8시-17시, 3시간 간격, 최대 동시 처리: {self.max_concurrent_users}명)")
     
     def stop(self):
         """스케줄러 중지"""
@@ -192,24 +188,18 @@ class NotificationScheduler:
                     
                     # 분석 결과 저장
                     portfolio_key = f"portfolio_{user.id}"
-                    save_analysis_result(user.id, portfolio_key, analysis_result, db)
                     
-                    # 알림 필요성 판단
-                    should_notify = determine_notification_need(analysis_result)
+                    # 알림 필요성 판단 및 파싱된 데이터 수신
+                    should_notify, parsed_analysis = determine_notification_need(db, user, analysis_result)
                     logger.info(f"✅ {user.name}님의 {len(user_data['etf_data_list'])}개 ETF 통합 분석 완료: 알림 {'전송 필요' if should_notify else '불필요'}")
 
                     if should_notify:
-                        recommendation = extract_recommendation(analysis_result)
-                        confidence_score = extract_confidence_score(analysis_result)
-                        
                         notifications_to_send.append({
                             'type': 'integrated_investment',
                             'user_id': user.id,
                             'user_setting': user_data["user_setting"],
                             'etf_data_list': user_data["etf_data_list"],
-                            'analysis_result': analysis_result,
-                            'recommendation': recommendation,
-                            'confidence_score': confidence_score
+                            'parsed_analysis': parsed_analysis # 파싱된 데이터를 전달
                         })
                 except Exception as e:
                     logger.error(f"❌ 통합 분석 결과 처리 중 오류: {e}")
@@ -217,7 +207,7 @@ class NotificationScheduler:
         # 수집된 알림들을 대량으로 전송
         if notifications_to_send:
             logger.info(f"📤 통합 투자 알림 대량 전송 시작: {len(notifications_to_send)}개")
-            result_summary = await notification_service.send_bulk_notifications(db, notifications_to_send)
+            result_summary = await notification_service.send_bulk_notifications(notifications_to_send)
             logger.info(f"✅ 통합 투자 알림 대량 전송 완료: {result_summary}")
         else:
             logger.info("ℹ️ 전송할 통합 투자 알림이 없습니다.")

@@ -6,12 +6,16 @@ ETF_AI 모듈과 연동하여 투자 결정을 분석하고 알림 여부를 결
 import httpx
 import logging
 from typing import Dict, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
+import numpy as np
 
-from config.notification_config import get_ai_analysis_threshold, NOTIFICATION_TYPES
+from sentence_transformers import SentenceTransformer, util
+
+from config.notification_config import NOTIFICATION_TYPES
 from models import User, InvestmentSettings
 from crud.notification import get_notifications_by_user_id_and_type
+from crud.user import update_user_investment_settings # crud 추가
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +26,14 @@ AI_SERVICE_URL = os.getenv("ETF_AI_SERVICE_URL", "http://localhost:8001")
 MAX_RETRIES = int(os.getenv("AI_SERVICE_MAX_RETRIES", "3"))
 RETRY_DELAY = int(os.getenv("AI_SERVICE_RETRY_DELAY", "5"))
 
+# 문장 임베딩 모델 로드
+try:
+    embedding_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+    logger.info("✅ Sentence Transformer 모델 로드 성공")
+except Exception as e:
+    embedding_model = None
+    logger.error(f"❌ Sentence Transformer 모델 로드 실패: {e}")
+
 def create_integrated_analysis_messages(
     user: User,
     user_setting: InvestmentSettings,
@@ -29,47 +41,55 @@ def create_integrated_analysis_messages(
 ) -> list:
     """
     사용자의 모든 ETF를 포함한 통합 분석 메시지 생성 (구조적/구체적 프롬프트)
-    market_news: 외부 시장 뉴스 요약(선택)
     """
     try:
         # 1. 사용자 정보
         user_info = f"""[사용자 정보]\n- 이름: {user.name}\n- 위험 성향(0~10): {user_setting.risk_level}\n- 투자 목표/페르소나: {user_setting.persona or '미입력'}"""
+        
         # 2. ETF 정보
-        etf_info = "[ETF 목록]\n" + "\n".join([
+        etf_info = "[보유 ETF 목록]\n" + "\n".join([
             f"- {etf_data['etf'].symbol}: {etf_data['etf_setting'].amount:,}만원, 주기: {etf_data['etf_setting'].cycle}, 이름: {etf_data['etf'].name}"
             for etf_data in etf_data_list
         ])
-        # 3. 분석 기준/목표
-        analysis_criteria = (
-            "[분석 기준]\n"
-            "- 시장 변동성이 20% 이상이거나, 사용자 위험 성향이 8 이상일 때만 비중 조정 권고\n"
-            "- ETF별로 조정 사유와 권장 비중을 명확히 제시\n"
-            "- 투자 금액, 주기, 시장 상황, 사용자 성향을 모두 고려\n"
-            "- 불필요한 조정은 피하고, 반드시 조정이 필요한 경우만 권고\n"
+        
+        # 3. 새로운 출력 포맷 및 규칙
+        output_format_and_rules = (
+            "[출력 포맷]\n"
+            "### ETF 분석 결과\n\n"
+            "#### SPY (미국 S&P500)\n"
+            "- **권고 사항**: 비중 유지 (시장 안정, 추가 매수 불필요)\n"
+            "- **이유**: ECB의 주요 정책금리 동결로 인한 글로벌 금융시장의 안정세가 유지되고 있습니다.\n\n"
+            "#### QQQ (미국 나스닥)\n"
+            "- **권고 사항**: 비중 10% 증가 권고 (기술주 강세, 성장 기대)\n"
+            "- **이유**: 기술주 중심의 나스닥 시장은 최근 긍정적인 경제 신호들로 강세를 보입니다.\n\n"
+            "### 종합 의견:\n"
+            "이번 주는 전반적으로 안정된 시장 모습을 보였습니다. 현 상황에서는 점진적이고 안정적인 접근이 필요합니다.\n"
+            "\n"
+            "[규칙]\n"
+            "1. 응답은 반드시 제공한 모든 ETF 목록을 분석한 후에, 위의 [출력 포맷]을 정확하게 따라야 합니다.\n"
+            "2. 각 ETF는 `#### <심볼> (<이름>)` 형식의 제목으로 시작해야 합니다.\n"
+            "3. 각 ETF 정보는 `- **권고 사항**: ...`과 `- **이유**: ...` 항목을 반드시 포함해야 합니다.\n"
+            "4. `### 종합 의견:` 항목을 반드시 포함해야 합니다.\n"
+            "5. 포맷 외에 불필요한 인사말, 서론, 결론 등 부연 설명을 절대 추가하지 마십시오."
         )
-        # 4. 예시 답변 포맷
-        example_format = (
-            "[분석 결과 예시]\n"
-            "- SPY: 비중 유지 (시장 안정, 추가 매수 불필요)\n"
-            "- QQQ: 비중 10% 증가 권고 (기술주 강세, 성장 기대)\n"
-            "- 종합 의견: 전체 포트폴리오의 위험도는 적정 수준, 추가 리밸런싱 필요 없음\n"
-        )
-        # 5. 오늘 날짜
+
+        # 4. 오늘 날짜
         today_date = f"[분석 기준일] {datetime.now().year}년 {datetime.now().month}월 {datetime.now().day}일"
-        # 6. 최종 developer 메시지 조립
+        
+        # 5. 최종 developer 메시지 조립
         developer_content = (
-            f"""
-{user_info}\n\n{etf_info}\n\n{analysis_criteria}\n{example_format}\n{today_date}\n\n위 정보를 바탕으로 오늘의 투자 조언을 위 예시 포맷에 맞춰 작성해줘.\nETF별로 조정이 필요한 경우 그 이유를 반드시 명확히 설명하고, 종합 의견도 꼭 포함해줘.\n답변은 반드시 [분석 결과 예시] 포맷을 따라줘.
-"""
+            f"당신은 유능한 금융 분석가입니다. 아래 정보를 바탕으로 포트폴리오 조정에 대한 조언을 생성해야 합니다. 반드시 [규칙]을 엄격히 준수하십시오.\n\n"
+            f"{user_info}\n\n"
+            f"{etf_info}\n\n"
+            f"{today_date}\n\n"
+            f"{output_format_and_rules}"
         )
-        # 7. user 메시지(명령)
-        user_content = (
-            "아래 정보를 참고해서 오늘 투자할 ETF 포트폴리오의 각 상품별 투자 비중을 조정해야 하는지 판단해줘. "
-            "시장 뉴스, 투자 금액, 주기, 사용자 성향을 모두 고려해서, 조정이 필요한 경우만 구체적으로 권고해줘. "
-            "ETF별로 조정 사유와 권장 비중을 명확히 제시하고, 종합 의견도 꼭 포함해줘."
-        )
+        
+        # 6. user 메시지(명령) 단순화
+        user_content = "오늘의 투자 포트폴리오 조정 조언을 생성해줘."
+
         messages = [
-            {"role": "developer", "content": developer_content},
+            {"role": "system", "content": developer_content}, # 역할을 system으로 변경하여 더 강력한 지시
             {"role": "user", "content": user_content}
         ]
         return messages
@@ -195,655 +215,127 @@ async def request_batch_ai_analysis(
         logger.error(f"❌ 배치 AI 서비스 요청 중 예상치 못한 오류: {e}")
         return []
 
-def determine_notification_need(analysis_result: str) -> bool:
+def parse_structured_ai_response(analysis_text: str) -> dict:
     """
-    현재 AI 분석 결과만을 기반으로 알림 필요성 판단 (ML 모델 제거)
-    
-    Args:
-        analysis_result: 현재 AI 분석 결과
-    
-    Returns:
-        알림 전송 여부
+    구조화된 AI 분석 응답 텍스트(마크다운 형식)를 파싱하여 딕셔셔너리로 변환합니다.
     """
+    import re
+    parsed_data = {"etfs": [], "summary": ""}
     try:
-        logger.debug(f"🚀 알림 필요성 판단 시작...")
-        logger.debug(f"입력된 분석 결과: {analysis_result[:200]}...")
-
-        # 1. 긴급성 수준 분석 (가장 중요)
-        urgency_level = analyze_urgency_level(analysis_result)
-        
-        # 2. 권장사항 중요도 분석
-        recommendation_importance = analyze_recommendation_importance(analysis_result)
-        
-        # 3. 위험도 수준 분석
-        risk_level = analyze_risk_level(analysis_result)
-        
-        # 4. 시장 상황 중요도 분석
-        market_importance = analyze_market_importance(analysis_result)
-        
-        # 5. 투자 금액 변화 중요도 분석
-        amount_importance = analyze_amount_importance(analysis_result)
-        
-        # 6. 종합 점수 계산 (ML 제거)
-        notification_score = calculate_simplified_notification_score(
-            urgency_level=urgency_level,
-            recommendation_importance=recommendation_importance,
-            risk_level=risk_level,
-            market_importance=market_importance,
-            amount_importance=amount_importance
-        )
-        
-        # 7. 동적 임계값 적용
-        dynamic_threshold = get_simplified_dynamic_threshold(
-            analysis_result, 
-            urgency_level
-        )
-        
-        should_notify = notification_score > dynamic_threshold
-        
-        # 상세 로깅
-        logger.debug(f"📊 알림 판단 최종 결과:")
-        logger.debug(f"   - 긴급성 수준: {urgency_level:.3f}")
-        logger.debug(f"   - 권장사항 중요도: {recommendation_importance:.3f}")
-        logger.debug(f"   - 위험도 수준: {risk_level:.3f}")
-        logger.debug(f"   - 시장 상황 중요도: {market_importance:.3f}")
-        logger.debug(f"   - 투자 금액 중요도: {amount_importance:.3f}")
-        logger.debug(f"   - 종합 점수: {notification_score:.3f}")
-        logger.debug(f"   - 동적 임계값: {dynamic_threshold:.3f}")
-        logger.debug(f"   - 최종 알림 결정: {'✅ 전송' if should_notify else '❌ 미전송'}")
-        
-        return should_notify
-        
-    except Exception as e:
-        logger.error(f"❌ 단순화된 알림 판단 중 오류: {e}")
-        return True  # 오류 시 안전하게 알림 전송
-
-def analyze_recommendation_importance(analysis_result: str) -> float:
-    """투자 권장사항의 중요도 분석 (가중치 기반으로 변경)"""
-    try:
-        # 가중치 기반 키워드
-        keyword_weights = {
-            # 직접적인 행동 지시 (3점)
-            '매수': 3, '매도': 3, '증가': 3, '감소': 3, '상향': 3, '하향': 3, '변경': 3, '조정': 3, '회수': 3,
-            # 긴급성/경고 (2점)
-            '즉시': 2, '당장': 2, '긴급': 2, '주의': 2, '경고': 2,
-            # 추천/제안 (1점)
-            '추천': 1, '권고': 1, '제안': 1,
-            # 중립/관망 (0점)
-            '유지': 0, '보유': 0, '현상유지': 0, '관망': 0, '신중': 0, '보수': 0
-        }
-        
-        text_lower = analysis_result.lower()
-        
-        score = 0
-        matched_keywords = []
-        for keyword, weight in keyword_weights.items():
-            if keyword in text_lower:
-                score += weight
-                matched_keywords.append(f"{keyword}({weight})")
-        
-        logger.debug(f"권장사항 중요도 분석: 매칭된 키워드: {', '.join(matched_keywords) if matched_keywords else '없음'}. 총점: {score}")
-
-        # 점수 구간에 따라 최종 점수 반환
-        # 5점 이상이면 매우 중요(1.0), 3점 이상이면 중요(0.8), 1점 이상이면 보통(0.5), 그 외에는 낮음(0.2)
-        if score >= 5:
-            final_score = 1.0
-        elif score >= 3:
-            final_score = 0.8
-        elif score >= 1:
-            final_score = 0.5
+        # '### 종합 의견:'을 기준으로 종합 의견 추출
+        summary_match = re.search(r'### 종합 의견:\s*(.*)', analysis_text, re.DOTALL | re.IGNORECASE)
+        if summary_match:
+            parsed_data["summary"] = summary_match.group(1).strip()
+            etf_section = analysis_text[:summary_match.start()]
         else:
-            final_score = 0.2
-            
-        logger.debug(f"권장사항 중요도 분석: 최종 점수: {final_score}")
-        return final_score
-            
-    except Exception as e:
-        logger.error(f"❌ 권장사항 중요도 분석 중 오류: {e}")
-        return 0.5
+            etf_section = analysis_text
 
-def analyze_risk_level(analysis_result: str) -> float:
-    """위험도 수준 분석 (0.0 ~ 1.0, 가중치 기반으로 변경)"""
+        # '####'로 시작하는 각 ETF 블록을 찾아서 처리
+        etf_blocks = re.split(r'(?=####\s+)', etf_section)
+
+        for block in etf_blocks:
+            block = block.strip()
+            if not block.startswith('####'):
+                continue
+            
+            # 심볼과 이름 추출
+            title_match = re.search(r'####\s+([A-Z0-9]+)\s*\((.*?)\)', block, re.IGNORECASE)
+            if not title_match:
+                continue
+            
+            symbol, name = title_match.groups()
+
+            # 권고 사항 추출
+            recommendation_match = re.search(r'-\s*\*\*권고 사항\*\*:\s*(.*)', block, re.IGNORECASE)
+            recommendation = recommendation_match.group(1).strip() if recommendation_match else ""
+
+            # 이유 추출
+            reason_match = re.search(r'-\s*\*\*이유\*\*:\s*(.*)', block, re.IGNORECASE | re.DOTALL)
+            reason = reason_match.group(1).strip() if reason_match else ""
+
+            parsed_data["etfs"].append({
+                "symbol": symbol.strip(),
+                "name": name.strip(),
+                "recommendation": recommendation,
+                "reason": reason
+            })
+
+    except Exception as e:
+        logger.error(f"❌ AI 응답 파싱 중 오류 발생: {e}")
+        # 파싱 실패 시, 전체 텍스트를 summary에 넣어 기존 로직이 어느정도 동작하도록 함
+        return {"etfs": [], "summary": analysis_text}
+    
+    logger.debug(f"파싱된 데이터: {parsed_data}")
+    return parsed_data
+
+def determine_notification_need(
+    db,
+    user: User,
+    analysis_result: str
+) -> tuple[bool, dict]:
+    """
+    이전 분석 결과와의 코사인 유사도를 기반으로 알림 필요성 판단
+    - 오늘의 첫 분석은 항상 알림 전송
+    """
+    if not embedding_model:
+        logger.error(" embedding 모델이 로드되지 않아 알림 판단을 스킵합니다.")
+        return True, {"etfs": [], "summary": analysis_result}
+
     try:
-        # 가중치 기반 키워드
-        keyword_weights = {
-            # 매우 높음 (3점)
-            '불안정': 3, '변동성 증가': 3, '위험도 증가': 3,
-            # 높음 (2점)
-            '위험': 2, '주의': 2, '높은 위험': 2,
-            # 보통 (1점)
-            '보통 위험': 1, '중간': 1, '적당한': 1, '보통': 1,
-            # 낮음 (0점)
-            '낮은 위험': 0, '안정적': 0, '보수적': 0, '안전': 0, '평온': 0
+        logger.debug(f"🚀 코사인 유사도 기반 알림 필요성 판단 시작 (사용자: {user.id})")
+        
+        # 1. 현재 분석 결과 파싱
+        parsed_analysis = parse_structured_ai_response(analysis_result)
+        
+        # 2. 이전 분석 정보 가져오기
+        previous_analysis = user.settings.last_analysis_result
+        last_analysis_time = user.settings.last_analysis_at
+
+        # 3. 새로운 분석 결과를 DB에 저장할 준비
+        current_time = datetime.now(last_analysis_time.tzinfo if last_analysis_time else None)
+        new_setting_data = {
+            "last_analysis_result": analysis_result,
+            "last_analysis_at": current_time
         }
-        
-        text_lower = analysis_result.lower()
-        
-        score = 0
-        matched_keywords = []
-        for keyword, weight in keyword_weights.items():
-            if keyword in text_lower:
-                score += weight
-                matched_keywords.append(f"{keyword}({weight})")
 
-        logger.debug(f"위험도 분석: 매칭된 키워드: {', '.join(matched_keywords) if matched_keywords else '없음'}. 총점: {score}")
+        # 4. 오늘의 첫 분석인지 확인
+        is_first_analysis_today = not last_analysis_time or last_analysis_time.date() < current_time.date()
 
-        # 점수 구간에 따라 최종 점수 반환
-        if score >= 4:
-            final_score = 1.0
-        elif score >= 2:
-            final_score = 0.8
-        elif score >= 1:
-            final_score = 0.5
+        if is_first_analysis_today:
+            logger.info(f"✅ 오늘의 첫 분석입니다. 알림을 전송하고 결과를 저장합니다.")
+            update_user_investment_settings(db, user.id, new_setting_data)
+            return True, parsed_analysis
+
+        # 5. 이전 분석 결과가 없는 경우 (오늘 첫 분석이 아닌데 이전 결과가 없는 경우)
+        if not previous_analysis:
+            logger.warning(f"⚠️ 이전 분석 결과가 없습니다. 알림을 전송하고 결과를 저장합니다.")
+            update_user_investment_settings(db, user.id, new_setting_data)
+            return True, parsed_analysis
+
+        # 6. 이전과 현재 분석 결과의 유사도 계산 (오늘 두 번째 분석부터)
+        embedding_current = embedding_model.encode(analysis_result, convert_to_tensor=True)
+        embedding_previous = embedding_model.encode(previous_analysis, convert_to_tensor=True)
+        
+        cosine_similarity = util.pytorch_cos_sim(embedding_current, embedding_previous).item()
+        
+        logger.debug(f"📊 이전 결과와의 코사인 유사도: {cosine_similarity:.4f}")
+
+        # 7. 유사도 임계값을 기준으로 알림 여부 결정
+        SIMILARITY_THRESHOLD = 0.95
+        
+        should_notify = False
+        if cosine_similarity < SIMILARITY_THRESHOLD:
+            logger.info(f"✅ 유사도({cosine_similarity:.4f})가 임계값({SIMILARITY_THRESHOLD}) 미만. 중요한 변화로 판단하여 알림을 전송하고 결과를 저장합니다.")
+            should_notify = True
+            # 알림을 보낼 때만 최신 분석 결과로 업데이트
+            update_user_investment_settings(db, user.id, new_setting_data)
         else:
-            final_score = 0.2
-            
-        logger.debug(f"위험도 분석: 최종 점수: {final_score}")
-        return final_score
+            logger.info(f"❌ 유사도({cosine_similarity:.4f})가 임계값({SIMILARITY_THRESHOLD}) 이상. 변화가 미미하여 알림을 전송하지 않습니다.")
+            # 알림을 보내지 않으므로 결과도 저장하지 않음
+
+        return should_notify, parsed_analysis
         
     except Exception as e:
-        logger.error(f"❌ 위험도 분석 중 오류: {e}")
-        return 0.5
-
-def analyze_market_importance(analysis_result: str) -> float:
-    """시장 상황의 중요도 분석 (가중치 기반으로 변경)"""
-    try:
-        # 가중치 기반 키워드
-        keyword_weights = {
-            # 매우 중요 (3점)
-            '급변': 3, '긴급': 3, '침체': 3, '위험': 3,
-            # 중요 (2점)
-            '하락장': 2, '변동성': 2, '불안정': 2, '부정적': 2,
-            # 보통 (1점)
-            '상승장': 1, '호황': 1, '기회': 1, '긍정적': 1,
-            # 안정 (0점)
-            '안정': 0, '평온': 0, '예측가능': 0, '일정': 0, '관망': 0
-        }
-        
-        text_lower = analysis_result.lower()
-        
-        score = 0
-        matched_keywords = []
-        for keyword, weight in keyword_weights.items():
-            if keyword in text_lower:
-                score += weight
-                matched_keywords.append(f"{keyword}({weight})")
-        
-        logger.debug(f"시장 상황 중요도 분석: 매칭된 키워드: {', '.join(matched_keywords) if matched_keywords else '없음'}. 총점: {score}")
-
-        # 점수 구간에 따라 최종 점수 반환
-        if score >= 4:
-            final_score = 1.0
-        elif score >= 2:
-            final_score = 0.8
-        elif score >= 1:
-            final_score = 0.5
-        else:
-            final_score = 0.2
-            
-        logger.debug(f"시장 상황 중요도 분석: 최종 점수: {final_score}")
-        return final_score
-            
-    except Exception as e:
-        logger.error(f"❌ 시장 상황 중요도 분석 중 오류: {e}")
-        return 0.5
-
-def analyze_amount_importance(analysis_result: str) -> float:
-    """투자 금액 변화의 중요도 분석"""
-    try:
-        # 금액 관련 정보 추출
-        amounts = extract_investment_amounts(analysis_result)
-        
-        if not amounts:
-            logger.debug("투자 금액 중요도 분석: 금액 정보 없음. 점수: 0.3")
-            return 0.3  # 금액 정보가 없으면 낮은 중요도
-        
-        # 평균 금액 계산
-        avg_amount = sum(amounts) / len(amounts)
-        logger.debug(f"투자 금액 중요도 분석: 평균 금액 {avg_amount}만원")
-        
-        # 금액 크기에 따른 중요도 (큰 금액일수록 중요)
-        if avg_amount > 100:  # 100만원 이상
-            logger.debug("투자 금액 중요도 분석: 100만원 초과. 점수: 0.9")
-            return 0.9
-        elif avg_amount > 50:  # 50만원 이상
-            logger.debug("투자 금액 중요도 분석: 50만원 초과. 점수: 0.7")
-            return 0.7
-        elif avg_amount > 20:  # 20만원 이상
-            logger.debug("투자 금액 중요도 분석: 20만원 초과. 점수: 0.5")
-            return 0.5
-        else:
-            logger.debug("투자 금액 중요도 분석: 20만원 이하. 점수: 0.3")
-            return 0.3
-            
-    except Exception as e:
-        logger.error(f"❌ 투자 금액 중요도 분석 중 오류: {e}")
-        return 0.5
-
-def calculate_simplified_notification_score(
-    urgency_level: float,
-    recommendation_importance: float,
-    risk_level: float,
-    market_importance: float,
-    amount_importance: float
-) -> float:
-    """ML 제거된 단순화된 종합 알림 점수 계산"""
-    try:
-        # 가중치 재조정 (ML 점수 제거)
-        weights = {
-            'urgency_level': 0.35,           # 30% → 35%
-            'recommendation_importance': 0.30, # 25% → 30%
-            'risk_level': 0.15,              # 유지
-            'market_importance': 0.15,       # 유지
-            'amount_importance': 0.05        # 10% → 5%
-        }
-        
-        logger.debug(f"종합 점수 계산 입력값: 긴급성={urgency_level}, 권장사항={recommendation_importance}, 위험도={risk_level}, 시장={market_importance}, 금액={amount_importance}")
-        
-        # 가중 평균 계산
-        weighted_score = (
-            urgency_level * weights['urgency_level'] +
-            recommendation_importance * weights['recommendation_importance'] +
-            risk_level * weights['risk_level'] +
-            market_importance * weights['market_importance'] +
-            amount_importance * weights['amount_importance']
-        )
-        
-        final_score = min(weighted_score, 1.0)
-        logger.debug(f"계산된 종합 점수: {final_score:.3f}")
-        return final_score
-        
-    except Exception as e:
-        logger.error(f"❌ 단순화된 알림 점수 계산 중 오류: {e}")
-        return 0.5
-
-def get_simplified_dynamic_threshold(analysis_result: str, urgency_level: float) -> float:
-    """단순화된 동적 임계값 계산"""
-    try:
-        base_threshold = 0.7
-        logger.debug(f"동적 임계값 계산 시작. 기본값: {base_threshold}")
-        
-        # 긴급성에 따른 임계값 조정
-        if urgency_level > 0.8:
-            base_threshold -= 0.3  # 긴급 상황은 매우 낮은 임계값
-            logger.debug(f"  - 긴급성(>0.8) 조정: -0.3. 현재 임계값: {base_threshold:.3f}")
-        elif urgency_level > 0.6:
-            base_threshold -= 0.2  # 높은 긴급성
-            logger.debug(f"  - 긴급성(>0.6) 조정: -0.2. 현재 임계값: {base_threshold:.3f}")
-        elif urgency_level > 0.4:
-            base_threshold -= 0.1  # 중간 긴급성
-            logger.debug(f"  - 긴급성(>0.4) 조정: -0.1. 현재 임계값: {base_threshold:.3f}")
-        
-        # 시장 상황에 따른 조정
-        if '불안정' in analysis_result or '변동성' in analysis_result:
-            base_threshold -= 0.1
-            logger.debug(f"  - 시장상황(불안정/변동성) 조정: -0.1. 현재 임계값: {base_threshold:.3f}")
-        
-        # 시간대에 따른 조정
-        current_hour = datetime.now().hour
-        if 9 <= current_hour <= 15:  # 시장 개장 시간
-            base_threshold -= 0.1
-            logger.debug(f"  - 시간대(장중) 조정: -0.1. 현재 임계값: {base_threshold:.3f}")
-        elif 15 < current_hour <= 18:  # 시장 마감 후
-            base_threshold += 0.05
-            logger.debug(f"  - 시간대(장마감) 조정: +0.05. 현재 임계값: {base_threshold:.3f}")
-        
-        # 요일에 따른 조정
-        current_weekday = datetime.now().weekday()
-        if current_weekday in [5, 6]:  # 주말
-            base_threshold += 0.1
-            logger.debug(f"  - 요일(주말) 조정: +0.1. 현재 임계값: {base_threshold:.3f}")
-        
-        
-        # 최소/최대 임계값 보장
-        final_threshold = max(0.3, min(0.9, base_threshold))
-        logger.debug(f"최종 동적 임계값: {final_threshold:.3f}")
-        return final_threshold
-        
-    except Exception as e:
-        logger.error(f"❌ 단순화된 동적 임계값 계산 중 오류: {e}")
-        return 0.7
-
-def analyze_urgency_level(analysis_result: str) -> float:
-    """
-    긴급성 수준 분석 (가중치 기반)
-    
-    Args:
-        analysis_result: 분석 결과
-    
-    Returns:
-        긴급성 점수 (0.0 ~ 1.0)
-    """
-    try:
-        urgency_keyword_weights = {
-            # 높음 (3점) - 이 단어가 하나라도 있으면 높은 긴급성
-            '긴급': 3, '즉시': 3, '당장': 3, '경고': 3,
-            # 중간 (1점) - 상황을 주시해야 함
-            '위험': 1, '주의': 1, '신중': 1, '변동성': 1, '급변': 1,
-            # 낮음 (-1점) - 긴급성이 낮아짐
-            '안정': -1, '유지': -1, '관망': -1, '평온': -1, '보유': -1
-        }
-        
-        text_lower = analysis_result.lower()
-        
-        score = 0
-        matched_keywords = []
-        for keyword, weight in urgency_keyword_weights.items():
-            if keyword in text_lower:
-                score += weight
-                matched_keywords.append(f"{keyword}({weight})")
-        
-        logger.debug(f"긴급성 분석: 매칭된 키워드: {', '.join(matched_keywords) if matched_keywords else '없음'}. 총점: {score}")
-
-        # 점수 구간에 따라 최종 점수 반환
-        if score >= 3:
-            logger.debug("긴급성 최종 점수: 1.0 (높음)")
-            return 1.0
-        elif score >= 1:
-            logger.debug("긴급성 최종 점수: 0.6 (중간)")
-            return 0.6
-        elif score < 0:
-            logger.debug("긴급성 최종 점수: 0.2 (낮음)")
-            return 0.2
-        else: # score == 0
-            logger.debug("긴급성 최종 점수: 0.5 (기본)")
-            return 0.5
-            
-    except Exception as e:
-        logger.error(f"❌ 긴급성 분석 중 오류: {e}")
-        return 0.5
-
-def get_user_customized_threshold(user_id: int, db) -> float:
-    """
-    사용자별 맞춤형 알림 임계값 계산
-    
-    Args:
-        user_id: 사용자 ID
-        db: 데이터베이스 세션
-    
-    Returns:
-        사용자별 임계값
-    """
-    try:
-        from crud.user import get_user_by_id
-        from crud.notification import get_user_notification_history
-        
-        user = get_user_by_id(db, user_id)
-        if not user or not user.settings:
-            return 0.7  # 기본값
-        
-        # 사용자 위험도에 따른 기본 임계값 조정
-        risk_level = user.settings.risk_level
-        base_threshold = 0.7
-        
-        if risk_level <= 3:  # 보수적 투자자
-            base_threshold += 0.1  # 더 높은 임계값 (적은 알림)
-        elif risk_level >= 7:  # 공격적 투자자
-            base_threshold -= 0.1  # 더 낮은 임계값 (많은 알림)
-        
-        # 사용자 알림 이력 분석
-        notification_history = get_user_notification_history(db, user_id, limit=10)
-        
-        if notification_history:
-            # 최근 알림 빈도 분석
-            recent_notifications = len([n for n in notification_history if n.created_at > datetime.now() - timedelta(days=7)])
-            
-            if recent_notifications > 5:  # 일주일 내 5개 이상 알림
-                base_threshold += 0.1  # 알림 빈도가 높으면 임계값 증가
-            elif recent_notifications < 2:  # 일주일 내 2개 미만 알림
-                base_threshold -= 0.05  # 알림 빈도가 낮으면 임계값 감소
-        
-        # 사용자 투자 패턴 분석
-        investment_pattern = analyze_user_investment_pattern(user_id, db)
-        
-        if investment_pattern == 'frequent':
-            base_threshold -= 0.05  # 자주 투자하는 사용자는 더 민감하게
-        elif investment_pattern == 'conservative':
-            base_threshold += 0.05  # 보수적 투자자는 덜 민감하게
-        
-        return max(0.3, min(0.9, base_threshold))
-        
-    except Exception as e:
-        logger.error(f"❌ 사용자 맞춤형 임계값 계산 중 오류: {e}")
-        return 0.7
-
-def analyze_user_investment_pattern(user_id: int, db) -> str:
-    """
-    사용자 투자 패턴 분석
-    
-    Args:
-        user_id: 사용자 ID
-        db: 데이터베이스 세션
-    
-    Returns:
-        투자 패턴 ('frequent', 'moderate', 'conservative')
-    """
-    try:
-        from crud.etf import get_investment_etf_settings_by_user_id
-        
-        etf_settings = get_investment_etf_settings_by_user_id(db, user_id)
-        
-        if not etf_settings:
-            return 'moderate'
-        
-        # 투자 주기 분석
-        daily_count = sum(1 for setting in etf_settings if setting.cycle == 'daily')
-        weekly_count = sum(1 for setting in etf_settings if setting.cycle == 'weekly')
-        monthly_count = sum(1 for setting in etf_settings if setting.cycle == 'monthly')
-        
-        # 총 투자 금액 분석
-        total_amount = sum(setting.amount for setting in etf_settings)
-        
-        # 패턴 분류
-        if daily_count > 0 or (weekly_count > 2 and total_amount > 100):
-            return 'frequent'  # 자주 투자하는 패턴
-        elif monthly_count > 0 and total_amount < 50:
-            return 'conservative'  # 보수적 투자 패턴
-        else:
-            return 'moderate'  # 보통 투자 패턴
-            
-    except Exception as e:
-        logger.error(f"❌ 사용자 투자 패턴 분석 중 오류: {e}")
-        return 'moderate'
-
-def get_context_aware_threshold(
-    analysis_result: str,
-    user_id: int,
-    etf_symbol: str,
-    db
-) -> float:
-    """
-    상황 인식 임계값 계산
-    
-    Args:
-        analysis_result: 분석 결과
-        user_id: 사용자 ID
-        etf_symbol: ETF 심볼
-        db: 데이터베이스 세션
-    
-    Returns:
-        상황 인식 임계값
-    """
-    try:
-        # 기본 사용자 맞춤형 임계값
-        user_threshold = get_user_customized_threshold(user_id, db)
-        
-        # ETF별 특성에 따른 조정
-        etf_adjustment = get_etf_specific_adjustment(etf_symbol)
-        
-        # 시장 상황에 따른 조정
-        market_adjustment = get_market_situation_adjustment(analysis_result)
-        
-        # 시간대별 조정
-        time_adjustment = get_time_based_adjustment()
-        
-        # 최종 임계값 계산
-        final_threshold = user_threshold + etf_adjustment + market_adjustment + time_adjustment
-        
-        return max(0.3, min(0.9, final_threshold))
-        
-    except Exception as e:
-        logger.error(f"❌ 상황 인식 임계값 계산 중 오류: {e}")
-        return 0.7
-
-def get_etf_specific_adjustment(etf_symbol: str) -> float:
-    """ETF별 특성에 따른 임계값 조정"""
-    try:
-        # 변동성이 높은 ETF는 더 민감하게
-        high_volatility_etfs = ['QQQ', 'TQQQ', 'SQQQ', 'VXX']
-        low_volatility_etfs = ['BND', 'TLT', 'GLD', 'VNQ']
-        
-        if etf_symbol in high_volatility_etfs:
-            return -0.1  # 낮은 임계값 (더 민감하게)
-        elif etf_symbol in low_volatility_etfs:
-            return 0.05  # 높은 임계값 (덜 민감하게)
-        
-        return 0.0
-        
-    except Exception as e:
-        logger.error(f"❌ ETF별 조정 계산 중 오류: {e}")
-        return 0.0
-
-def get_market_situation_adjustment(analysis_result: str) -> float:
-    """시장 상황에 따른 임계값 조정"""
-    try:
-        adjustment = 0.0
-        
-        # 긴급 상황 키워드
-        urgent_keywords = ['긴급', '위험', '주의', '경고', '즉시']
-        if any(keyword in analysis_result for keyword in urgent_keywords):
-            adjustment -= 0.2
-        
-        # 안정적 상황 키워드
-        stable_keywords = ['안정', '평온', '관망', '보수']
-        if any(keyword in analysis_result for keyword in stable_keywords):
-            adjustment += 0.1
-        
-        return adjustment
-        
-    except Exception as e:
-        logger.error(f"❌ 시장 상황 조정 계산 중 오류: {e}")
-        return 0.0
-
-def get_time_based_adjustment() -> float:
-    """시간대별 임계값 조정"""
-    try:
-        current_time = datetime.now()
-        current_hour = current_time.hour
-        current_weekday = current_time.weekday()
-        
-        adjustment = 0.0
-        
-        # 시장 개장 시간 (9-15시)
-        if 9 <= current_hour <= 15:
-            adjustment -= 0.1  # 시장 시간에는 더 민감하게
-        
-        # 시장 마감 후 (15-18시)
-        elif 15 < current_hour <= 18:
-            adjustment += 0.05  # 마감 후에는 덜 민감하게
-        
-        # 야간 시간 (18-9시)
-        elif current_hour > 18 or current_hour < 9:
-            adjustment += 0.1  # 야간에는 덜 민감하게
-        
-        # 주말
-        if current_weekday in [5, 6]:  # 토, 일
-            adjustment += 0.15  # 주말에는 훨씬 덜 민감하게
-        
-        return adjustment
-        
-    except Exception as e:
-        logger.error(f"❌ 시간대별 조정 계산 중 오류: {e}")
-        return 0.0
-
-def extract_investment_amounts(text: str) -> list:
-    """투자 금액 추출"""
-    try:
-        import re
-        
-        # 금액 패턴 매칭 (예: 100만원, 1,000,000원 등)
-        amount_patterns = [
-            r'(\d+(?:,\d{3})*)\s*만원',
-            r'(\d+(?:,\d{3})*)\s*원',
-            r'(\d+(?:,\d{3})*)\s*천원'
-        ]
-        
-        amounts = []
-        for pattern in amount_patterns:
-            matches = re.findall(pattern, text)
-            for match in matches:
-                # 쉼표 제거 후 숫자로 변환
-                amount_str = match.replace(',', '')
-                try:
-                    amount = float(amount_str)
-                    amounts.append(amount)
-                except ValueError:
-                    continue
-        
-        return amounts
-        
-    except Exception as e:
-        logger.error(f"❌ 투자 금액 추출 중 오류: {e}")
-        return []
-
-def extract_recommendation(analysis_result: str) -> str:
-    """AI 분석 결과에서 추천사항 추출"""
-    try:
-        # 간단한 추천사항 추출 로직
-        lines = analysis_result.split('\n')
-        for line in lines:
-            if any(word in line for word in ["추천", "권장", "제안", "조정", "변경", "매수", "매도"]):
-                return line.strip()
-        
-        # 추천 키워드가 없으면 전체 결과 반환 (길이 제한)
-        if len(analysis_result) > 200:
-            return analysis_result[:200] + "..."
-        return analysis_result
-        
-    except Exception as e:
-        logger.error(f"❌ 추천사항 추출 중 오류: {e}")
-        return "AI 분석 결과를 확인해주세요."
-
-def extract_confidence_score(analysis_result: str) -> float:
-    """AI 분석 결과에서 신뢰도 점수 추출 (0.0 ~ 1.0)"""
-    try:
-        # 간단한 신뢰도 계산 로직
-        confidence_score = 0.5  # 기본값
-        
-        # 분석 결과의 길이와 내용을 바탕으로 신뢰도 조정
-        if len(analysis_result) > 100:
-            confidence_score += 0.2
-        
-        if any(word in analysis_result for word in ["분석", "데이터", "정보"]):
-            confidence_score += 0.1
-        
-        if any(word in analysis_result for word in ["확실", "명확", "분명"]):
-            confidence_score += 0.1
-        
-        return min(confidence_score, 1.0)
-        
-    except Exception as e:
-        logger.error(f"❌ 신뢰도 점수 추출 중 오류: {e}")
-        return 0.5  # 기본값 반환
-
-def save_analysis_result(user_id: int, etf_symbol: str, analysis_result: str, db) -> bool:
-    """
-    분석 결과를 임시 저장 (선택사항)
-    
-    Args:
-        user_id: 사용자 ID
-        etf_symbol: ETF 심볼 또는 포트폴리오 키
-        analysis_result: 분석 결과
-        db: 데이터베이스 세션
-    
-    Returns:
-        저장 성공 여부
-    """
-    try:
-        # 여기서는 로그만 남기고, 필요시 별도의 분석 결과 테이블을 만들 수 있음
-        logger.info(f"💾 {user_id} 사용자의 {etf_symbol} 분석 결과 저장됨")
-        return True
-        
-    except Exception as e:
-        logger.error(f"❌ 분석 결과 저장 중 오류: {e}")
-        return False
+        logger.error(f"❌ 코사인 유사도 기반 알림 판단 중 오류: {e}", exc_info=True)
+        # 오류 발생 시에는 일단 알림을 보내는 것을 기본으로 함
+        return True, {"etfs": [], "summary": analysis_result}

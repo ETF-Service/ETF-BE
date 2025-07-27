@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List
 from database import get_db
 from schemas.etf import (
-    ETF, UserETFUpdate, InvestmentSettingsUpdate, InvestmentSettingsResponse, UserETFResponse,
-    ETFInvestmentSettingBase, ETFInvestmentSettingUpdate, ETFInvestmentSetting, ETFInvestmentSettingsRequest, ETFInvestmentSettingsResponse
+    ETF, InvestmentSettingsUpdate, InvestmentSettingsResponse,
+    ETFInvestmentSettingUpdate, ETFInvestmentSetting, ETFInvestmentSettingsRequest, ETFInvestmentSettingsResponse
 )
 from crud.etf import (
     get_all_etfs,
