@@ -22,31 +22,36 @@ import models
 # 로그 디렉토리 생성
 def setup_logging():
     """로깅 설정 초기화"""
-    # logs 디렉토리 생성
+    # logs 디렉토리 생성 (권한 오류 시 무시)
     log_dir = "logs"
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    try:
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file = f"{log_dir}/app_{datetime.now().strftime('%Y-%m-%d')}.log"
+        file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
+    except (OSError, PermissionError):
+        # Railway 환경에서는 파일 로그 대신 콘솔 로그만 사용
+        file_handler = None
     
-    # 로그 파일명 (날짜별)
-    today = datetime.now().strftime("%Y-%m-%d")
-    log_file = f"{log_dir}/app_{today}.log"
+    # 핸들러 설정
+    handlers = [logging.StreamHandler()]  # 콘솔 핸들러는 항상 포함
+    if file_handler:
+        handlers.append(file_handler)
     
     # 로깅 설정
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,  # Railway에서는 INFO 레벨 사용
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            # 파일 핸들러 (로그 파일에 저장)
-            RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'),
-            # 콘솔 핸들러 (터미널에도 출력)
-            logging.StreamHandler()
-        ]
+        handlers=handlers
     )
     
     # 로거 생성
     logger = logging.getLogger(__name__)
     logger.info("로깅 시스템 초기화 완료")
-    logger.info(f"로그 파일 위치: {os.path.abspath(log_file)}")
+    if file_handler:
+        logger.info(f"로그 파일 위치: {log_file}")
+    else:
+        logger.info("파일 로그 비활성화 (콘솔 로그만 사용)")
     
     return logger
 
@@ -111,6 +116,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 헬스체크 엔드포인트 추가
+@app.get("/")
+async def health_check():
+    """Railway 헬스체크용 엔드포인트"""
+    return {"status": "healthy", "message": "ETF Backend API is running"}
+
+@app.get("/health")
+async def health():
+    """추가 헬스체크 엔드포인트"""
+    return {"status": "ok"}
+
 app.include_router(user_router.router)
 app.include_router(etf_router.router)
 app.include_router(chat_router.router)
+
+# Railway 배포용 - uvicorn 실행 설정
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

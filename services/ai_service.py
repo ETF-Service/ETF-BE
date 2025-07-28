@@ -10,7 +10,8 @@ from datetime import datetime
 import json
 import numpy as np
 
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from config.notification_config import NOTIFICATION_TYPES
 from models import User, InvestmentSettings
@@ -312,25 +313,41 @@ def determine_notification_need(
             update_user_investment_settings(db, user.id, new_setting_data)
             return True, parsed_analysis
 
-        # 6. 이전과 현재 분석 결과의 유사도 계산 (오늘 두 번째 분석부터)
-        embedding_current = embedding_model.encode(analysis_result, convert_to_tensor=True)
-        embedding_previous = embedding_model.encode(previous_analysis, convert_to_tensor=True)
+        # 6. 이전과 현재 분석의 "종합 의견"을 추출하여 유사도 계산
+        current_summary = parsed_analysis.get("summary", "")
+        previous_parsed = parse_structured_ai_response(previous_analysis)
+        previous_summary = previous_parsed.get("summary", "")
+
+        # 종합 의견이 없는 경우, 비교가 불가능하므로 변화로 간주
+        if not current_summary or not previous_summary:
+            logger.warning("현재 또는 이전 분석에서 '종합 의견'을 추출할 수 없어, 중요한 변경으로 간주하고 알림을 보냅니다.")
+            update_user_investment_settings(db, user.id, new_setting_data)
+            return True, parsed_analysis
+
+        logger.debug("--- 현재 종합 의견 ---")
+        logger.debug(current_summary)
+        logger.debug("--- 이전 종합 의견 ---")
+        logger.debug(previous_summary)
+        logger.debug("--------------------")
         
-        cosine_similarity = util.pytorch_cos_sim(embedding_current, embedding_previous).item()
+        embedding_current = embedding_model.encode([current_summary])
+        embedding_previous = embedding_model.encode([previous_summary])
         
-        logger.debug(f"📊 이전 결과와의 코사인 유사도: {cosine_similarity:.4f}")
+        similarity = cosine_similarity(embedding_current, embedding_previous)[0][0]
+        
+        logger.debug(f"📊 이전 결과와의 코사인 유사도: {similarity:.4f}")
 
         # 7. 유사도 임계값을 기준으로 알림 여부 결정
         SIMILARITY_THRESHOLD = 0.95
         
         should_notify = False
-        if cosine_similarity < SIMILARITY_THRESHOLD:
-            logger.info(f"✅ 유사도({cosine_similarity:.4f})가 임계값({SIMILARITY_THRESHOLD}) 미만. 중요한 변화로 판단하여 알림을 전송하고 결과를 저장합니다.")
+        if similarity < SIMILARITY_THRESHOLD:
+            logger.info(f"✅ 유사도({similarity:.4f})가 임계값({SIMILARITY_THRESHOLD}) 미만. 중요한 변화로 판단하여 알림을 전송하고 결과를 저장합니다.")
             should_notify = True
             # 알림을 보낼 때만 최신 분석 결과로 업데이트
             update_user_investment_settings(db, user.id, new_setting_data)
         else:
-            logger.info(f"❌ 유사도({cosine_similarity:.4f})가 임계값({SIMILARITY_THRESHOLD}) 이상. 변화가 미미하여 알림을 전송하지 않습니다.")
+            logger.info(f"❌ 유사도({similarity:.4f})가 임계값({SIMILARITY_THRESHOLD}) 이상. 변화가 미미하여 알림을 전송하지 않습니다.")
             # 알림을 보내지 않으므로 결과도 저장하지 않음
 
         return should_notify, parsed_analysis

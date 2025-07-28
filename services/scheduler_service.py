@@ -37,8 +37,8 @@ class NotificationScheduler:
         if not self.is_running:
             self.scheduler.add_job(
                 self.check_investment_dates,
-                # CronTrigger(hour='8-17/3', minute='0'),
-				CronTrigger(minute='*/5'),
+                CronTrigger(hour='8-17/3', minute='0'),
+				# CronTrigger(minute='*/5'),
                 id='investment_notification_check',
                 name='투자일 알림 체크 (병렬 처리 버전)',
                 replace_existing=True
