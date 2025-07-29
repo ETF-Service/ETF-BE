@@ -63,6 +63,7 @@ async def send_message_stream(
         
         # 2. 사용자 메시지를 DB에 저장
         save_message(db, user_id, "user", message.content)
+        db.commit()
         
         # 3. 사용자 설정 조회
         setting = get_investment_settings_by_user_id(db, user_id)
