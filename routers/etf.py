@@ -18,11 +18,14 @@ from crud.user import get_user_by_userId
 from utils.auth import get_current_user
 import httpx
 import logging
+import os
 
 # 로거 설정
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+AI_SERVICE_URL = os.getenv("ETF_AI_SERVICE_URL", "http://localhost:8001")
 
 # ETF 목록 조회
 @router.get("/etfs", response_model=List[ETF])
@@ -98,7 +101,7 @@ async def upsert_my_settings(
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(
-                        "http://localhost:8001/persona",
+                        f"{AI_SERVICE_URL}/persona",
                         json={
                             "name": user.name,
                             "invest_type": settings.risk_level or 5,
