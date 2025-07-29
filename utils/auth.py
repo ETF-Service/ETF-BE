@@ -7,8 +7,8 @@ import os
 
 # JWT 설정
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")  # 실제 운영시에는 환경변수로 관리
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 security = HTTPBearer(auto_error=False)  # auto_error=False로 설정하여 401 반환
 
