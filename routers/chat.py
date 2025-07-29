@@ -16,7 +16,7 @@ from utils.auth import get_current_user
 logger = logging.getLogger(__name__)
 
 # AI 서비스 URL 환경변수에서 가져오기 (기본값: localhost:8001)
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8001")
+AI_SERVICE_URL = os.getenv("ETF_AI_SERVICE_URL", "http://localhost:8001")
 
 router = APIRouter()
 
