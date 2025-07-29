@@ -11,4 +11,5 @@ sentence-transformers==3.0.1
 torch
 transformers
 scikit-learn
-numpy 
+numpy
+psycopg2-binary>=2.9.0 
