@@ -117,22 +117,26 @@ async def send_message_stream(
                         # 8. AI 응답을 DB에 저장
                         if full_response.strip():  # 빈 응답이 아닌 경우만 저장
                             save_message(db, user_id, "assistant", full_response)
+                            db.commit()
                         
                         yield "data: [DONE]\n\n"
                                 
             except httpx.TimeoutException:
+                db.rollback()
                 error_message = "AI 서비스 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
                 logger.warning(f"AI 서비스 타임아웃 - 사용자: {current_user}")
                 yield f"data: {json.dumps({'content': error_message})}\n\n"
                 yield "data: [DONE]\n\n"
                 
             except httpx.HTTPStatusError as e:
+                db.rollback()
                 error_message = f"AI 서비스 오류 (HTTP {e.response.status_code})"
                 logger.error(f"AI 서비스 HTTP 오류 - 사용자: {current_user}, 상태: {e.response.status_code}")
                 yield f"data: {json.dumps({'content': error_message})}\n\n"
                 yield "data: [DONE]\n\n"
                 
             except Exception as e:
+                db.rollback()
                 error_message = "AI 서비스와의 통신 중 오류가 발생했습니다."
                 logger.error(f"AI 서비스 통신 오류 - 사용자: {current_user}, 오류: {str(e)}")
                 yield f"data: {json.dumps({'content': error_message})}\n\n"
