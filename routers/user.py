@@ -168,6 +168,25 @@ def delete_current_user(current_user: str = Depends(get_current_user), db: Sessi
             detail="계정 삭제 중 오류가 발생했습니다."
         )
 
+@router.post("/auth/logout")
+def logout_endpoint(current_user: str = Depends(get_current_user)):
+    """사용자 로그아웃"""
+    try:
+        # JWT 토큰은 클라이언트에서 삭제하므로 서버에서는 로그만 남김
+        logger.info(f"사용자 로그아웃: {current_user}")
+        
+        return {
+            "message": "로그아웃 성공",
+            "user_id": current_user
+        }
+        
+    except Exception as e:
+        logger.error(f"로그아웃 처리 실패: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="로그아웃 처리 중 오류가 발생했습니다."
+        )
+
 @router.get("/users/me/notification-settings")
 def get_notification_settings(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
     """사용자 알림 설정 조회"""

@@ -1,0 +1,91 @@
+{
+  "health": {
+    "root_health": {
+      "status_code": 200,
+      "success": true,
+      "response": {
+        "status": "healthy",
+        "message": "ETF Backend API is running"
+      }
+    },
+    "health_endpoint": {
+      "status_code": 200,
+      "success": true,
+      "response": {
+        "status": "ok"
+      }
+    }
+  },
+  "user": {
+    "user_register": {
+      "status_code": 404,
+      "success": false,
+      "response": {
+        "detail": "Not Found"
+      }
+    },
+    "user_login": {
+      "status_code": 404,
+      "success": false,
+      "response": null
+    }
+  },
+  "etf": {
+    "etf_list": {
+      "status_code": 200,
+      "success": true,
+      "response": [
+        {
+          "symbol": "SPY",
+          "name": "미국 S&P500",
+          "description": "미국 대형주 지수 추종 ETF",
+          "id": 1
+        },
+        {
+          "symbol": "QQQ",
+          "name": "미국 나스닥",
+          "description": "미국 기술주 지수 추종 ETF",
+          "id": 2
+        },
+        {
+          "symbol": "EWY",
+          "name": "한국",
+          "description": "한국 주식 시장 ETF",
+          "id": 3
+        },
+        {
+          "symbol": "EWJ",
+          "name": "일본",
+          "description": "일본 주식 시장 ETF",
+          "id": 4
+        },
+        {
+          "symbol": "MCHI",
+          "name": "중국",
+          "description": "중국 주식 시장 ETF",
+          "id": 5
+        },
+        {
+          "symbol": "VGK",
+          "name": "유럽",
+          "description": "유럽 주식 시장 ETF",
+          "id": 6
+        }
+      ]
+    },
+    "etf_detail": {
+      "status_code": 404,
+      "success": false,
+      "response": null
+    }
+  },
+  "chat": {
+    "chat_send": {
+      "status_code": 404,
+      "success": false,
+      "response": {
+        "detail": "Not Found"
+      }
+    }
+  }
+}
