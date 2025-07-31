@@ -6,12 +6,13 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import List
 import asyncio
 import os
 import time
+from config.timezone_config import get_kst_now
 
 from database import SessionLocal
 from crud.notification import get_users_with_notifications_enabled
@@ -85,7 +86,7 @@ class NotificationScheduler:
     
     def get_users_with_investment_today(self, db: Session) -> List:
         """오늘 투자일인 사용자 조회 (한 사용자의 모든 투자일 ETF 포함)"""
-        today = datetime.now()
+        today = get_kst_now()  # 한국 시간 기준
         today_weekday = today.weekday()  # 0=월요일, 6=일요일 (Python datetime.weekday() 기준)
         today_day = today.day  # 1-31
         

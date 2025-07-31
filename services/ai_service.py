@@ -6,9 +6,10 @@ ETF_AI 모듈과 연동하여 투자 결정을 분석하고 알림 여부를 결
 import httpx
 import logging
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import json
 import numpy as np
+from config.timezone_config import get_kst_now
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -74,8 +75,9 @@ def create_integrated_analysis_messages(
             "5. 포맷 외에 불필요한 인사말, 서론, 결론 등 부연 설명을 절대 추가하지 마십시오."
         )
 
-        # 4. 오늘 날짜
-        today_date = f"[분석 기준일] {datetime.now().year}년 {datetime.now().month}월 {datetime.now().day}일"
+        # 4. 오늘 날짜 (한국 시간 기준)
+        kst_now = get_kst_now()
+        today_date = f"[분석 기준일] {kst_now.year}년 {kst_now.month}월 {kst_now.day}일"
         
         # 5. 최종 developer 메시지 조립
         developer_content = (

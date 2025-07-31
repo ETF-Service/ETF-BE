@@ -4,8 +4,9 @@ from contextlib import asynccontextmanager
 import logging
 from logging.handlers import RotatingFileHandler
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
+from config.timezone_config import get_kst_now
 
 # .env 파일 로드
 load_dotenv()
@@ -27,7 +28,7 @@ def setup_logging():
     try:
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_file = f"{log_dir}/app_{datetime.now().strftime('%Y-%m-%d')}.log"
+        log_file = f"{log_dir}/app_{get_kst_now().strftime('%Y-%m-%d')}.log"
         file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
     except (OSError, PermissionError):
         # Railway 환경에서는 파일 로그 대신 콘솔 로그만 사용
